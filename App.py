@@ -1,27 +1,12 @@
 import streamlit as st
 import os
-# Disable file watcher and static file hashing to avoid event loop and module introspection issues
 os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
-os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_HASHING"] = "false"
-os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "poll"  # Use polling watcher as fallback
 import asyncio
 import sys
-import logging
-
-# Set up logging for debugging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Set default asyncio event loop policy for all platforms
-asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-
-# Workaround for PyTorch module introspection issue
-import torch
-if hasattr(torch, '__path__'):
-    torch.__path__._path = []  # Mock _path attribute to prevent Streamlit watcher error
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
+    
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
@@ -34,6 +19,7 @@ import fitz  # PyMuPDF
 from PIL import Image
 import io
 import numpy as np
+import torch
 import traceback
 
 # Set page config as the first Streamlit command
@@ -45,12 +31,12 @@ def initialize_paddleocr():
         from paddleocr import PaddleOCR
         return PaddleOCR, True
     except ImportError:
-        logging.warning("PaddleOCR not installed")
         return None, False
 
 PaddleOCR, PADDLEOCR_AVAILABLE = initialize_paddleocr()
 if not PADDLEOCR_AVAILABLE:
     st.warning("⚠️ PaddleOCR not installed. Install with: pip install paddleocr")
+
 
 def check_faiss_availability():
     """Check if FAISS is available and provide installation guidance"""
@@ -69,8 +55,8 @@ def check_faiss_availability():
 
         After installation, restart your Streamlit app.
         """
-        logging.error(f"FAISS not available: {str(e)}")
         return False, error_msg
+
 
 def extract_text_from_pdf(pdf_file):
     """Extract text from PDF file using PyPDF2"""
@@ -84,7 +70,6 @@ def extract_text_from_pdf(pdf_file):
                 text += page_text
         return text
     except Exception as e:
-        logging.error(f"Error reading PDF with PyPDF2: {str(e)}")
         st.error(f"Error reading PDF with PyPDF2: {str(e)}")
         return None
 
@@ -119,14 +104,12 @@ def extract_images_and_ocr(pdf_file):
                                 page_ocr_text += line[1][0] + " "
                     ocr_text += page_ocr_text + "\n"
             except Exception as e:
-                logging.warning(f"OCR failed for page {page_num + 1}: {str(e)}")
                 st.warning(f"OCR failed for page {page_num + 1}: {str(e)}")
                 continue
 
         pdf_document.close()
         return ocr_text
     except Exception as e:
-        logging.error(f"Error during OCR processing: {str(e)}")
         st.error(f"Error during OCR processing: {str(e)}")
         return ""
 
@@ -148,27 +131,26 @@ def create_embeddings_with_fallback():
     for i, config in enumerate(embedding_configs):
         try:
             st.info(f"Attempting to load embedding model {i + 1}/{len(embedding_configs)}: {config['model_name']}")
-            logging.debug(f"Loading model: {config['model_name']}")
+            print(f"Loading model: {config['model_name']}")  # Debug print
             embeddings = HuggingFaceEmbeddings(
                 model_name=config["model_name"],
                 model_kwargs=config["model_kwargs"],
                 encode_kwargs=config["encode_kwargs"],
                 cache_folder=config["cache_folder"]
             )
-            logging.debug("Model loaded successfully")
+            print("Model loaded successfully")  # Debug print
             test_text = "This is a test sentence for embedding."
-            logging.debug("Generating test embedding...")
+            print("Generating test embedding...")  # Debug print
             test_embedding = embeddings.embed_query(test_text)
-            logging.debug(f"Test embedding length: {len(test_embedding)}")
+            print(f"Test embedding length: {len(test_embedding)}")  # Debug print
             if test_embedding and len(test_embedding) > 0:
                 st.success(f"✅ Successfully loaded embedding model: {config['model_name']}")
                 return embeddings
             else:
                 raise ValueError("Empty embedding generated")
         except Exception as e:
-            logging.warning(f"Failed to load {config['model_name']}: {str(e)}")
             st.warning(f"❌ Failed to load {config['model_name']}: {str(e)}")
-            logging.debug(f"Error details: {traceback.format_exc()}")
+            print(f"Error details: {traceback.format_exc()}")  # Debug print
             continue
 
     # Fallback to SentenceTransformer directly
@@ -183,18 +165,17 @@ def create_embeddings_with_fallback():
             'embed_documents': lambda texts: [embed_query(text) for text in texts]
         })
         test_embedding = embeddings.embed_query("test")
-        logging.debug(f"Fallback test embedding length: {len(test_embedding)}")
+        print(f"Fallback test embedding length: {len(test_embedding)}")  # Debug print
         if test_embedding and len(test_embedding) > 0:
             st.success("✅ Successfully loaded SentenceTransformer model")
             return embeddings
     except Exception as e:
-        logging.error(f"SentenceTransformer fallback failed: {str(e)}")
         st.error(f"❌ SentenceTransformer fallback failed: {str(e)}")
-        logging.debug(f"Fallback error details: {traceback.format_exc()}")
-        return None
+        print(f"Fallback error details: {traceback.format_exc()}")  # Debug print
 
     st.error("❌ Failed to create any embedding model. Please check your environment.")
     return None
+
 
 def create_vector_store(text_chunks):
     """Create FAISS vector store from text chunks with improved error handling"""
@@ -240,7 +221,6 @@ def create_vector_store(text_chunks):
                 progress = min((i + batch_size) / len(valid_chunks), 1.0)
                 progress_bar.progress(progress)
             except Exception as batch_error:
-                logging.warning(f"Error processing batch {i // batch_size + 1}: {str(batch_error)}")
                 st.warning(f"⚠️ Error processing batch {i // batch_size + 1}: {str(batch_error)}")
                 continue
 
@@ -254,7 +234,6 @@ def create_vector_store(text_chunks):
         st.success("✅ Successfully created vector store")
         return vector_store
     except Exception as e:
-        logging.error(f"Error in create_vector_store: {str(e)}")
         st.error(f"❌ Error in create_vector_store: {str(e)}")
         with st.expander("🔍 Debug Information"):
             st.error(f"Number of text chunks: {len(text_chunks) if text_chunks else 'None'}")
@@ -292,7 +271,7 @@ Instructions:
 5. **Handle Uncertainty** - If information is partially available, explain what you found and what might be missing
 6. **Structure Your Response** - Use bullet points, numbers, or clear formatting for complex information
 
-Context from Documenting:
+Context from Document:
 {context}
 
 Question: {question}
@@ -300,7 +279,7 @@ Question: {question}
 Guidelines for Response:
 - If you find complete information: Provide a comprehensive answer with specific details, numbers, and relevant context
 - If you find partial information: Share what's available and indicate what additional information might be helpful
-- If no relevant information exists: Explain "I cannot find information about [specific topic] in this document"
+- If no relevant information exists: State "I cannot find information about [specific topic] in this document"
 - For numerical/tabular data: Present it in a clear, organized format
 - For complex topics: Break down your answer into logical sections
 
@@ -315,13 +294,12 @@ Answer:
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
-            retriever=vector_store.as_retriever(search_kwargs={"k": 4}),
+            retriever=vector_store.as_retriever(search_kwargs={"k": 6}),
             return_source_documents=True,
             chain_type_kwargs={"prompt": prompt}
         )
         return qa_chain
     except Exception as e:
-        logging.error(f"Error creating QA chain: {str(e)}")
         st.error(f"Error creating QA chain: {str(e)}")
         return None
 
@@ -344,9 +322,8 @@ def main():
     # Get API key
     api_key = st.secrets.get("GROQ_API_KEY")
     if not api_key:
-        logging.error("GROQ_API_KEY not found in secrets")
         st.error("❌ GROQ_API_KEY not found in secrets!")
-        return
+        st.stop()
 
     # System information
     with st.expander("🔧 System Information"):
@@ -399,7 +376,7 @@ def main():
                 st.success(f"✅ Extracted {len(full_text):,} characters from PDF")
 
                 with st.expander("📊 Extraction Details"):
-                    col1, col2 = st.columns(3)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric("PDF Text", f"{st.session_state.document_stats['pdf_text_chars']:,} chars")
                     with col2:
@@ -425,11 +402,10 @@ def main():
                     st.session_state.qa_chain = create_qa_chain(st.session_state.vector_store, api_key)
                 else:
                     st.error("❌ Failed to create vector store. Please try again or contact support.")
-                    logging.error("Vector store creation failed")
 
         if st.session_state.vector_store and st.session_state.qa_chain:
             st.markdown("---")
-            st.markdown("💬 **Ask Questions About Your Document**")
+            st.subheader("💬 Ask Questions About Your Document")
 
             st.markdown("**💡 Example Questions:**")
             col1, col2 = st.columns(2)
@@ -470,18 +446,18 @@ def main():
             )
 
             if question != st.session_state.current_question:
-                st.session_state.current_question = st.question
+                st.session_state.current_question = question
 
-            if st.question:
+            if question:
                 with st.spinner("🤔 Analyzing document and generating answer..."):
                     try:
                         response = st.session_state.qa_chain.invoke({"query": question})
                         st.markdown("### 💡 Answer:")
-                        st.markdown(response["result"])
+                        st.write(response["result"])
                         if response.get("source_documents"):
                             with st.expander("📚 Source Context"):
                                 for i, doc in enumerate(response["source_documents"]):
-                                    st.markdown(f"**Source {i+1}:**")
+                                    st.markdown(f"**Source {i + 1}:**")
                                     content = doc.page_content
                                     if len(content) > 800:
                                         st.text(content[:800] + "...")
@@ -489,7 +465,6 @@ def main():
                                         st.text(content)
                                     st.markdown("---")
                     except Exception as e:
-                        logging.error(f"Error processing question: {str(e)}")
                         st.error(f"Error processing question: {str(e)}")
 
             col1, col2 = st.columns([1, 4])
@@ -507,7 +482,7 @@ def main():
         st.markdown("### 🌟 Enhanced Features:")
         st.markdown("""
         - **📄 Comprehensive Text Extraction** - PyPDF2 for regular text
-        - **🔍 OCR Support** - PaddleOCR for images, tables, and scanned content
+        - **🔍 OCR Support** - PaddleOCR for images, tables, and scanned content 
         - **🧠 Smart Chunking** - Optimized for preserving table and data context
         - **💡 Intelligent Q&A** - Groq LLM with specialized prompts for document analysis
         - **📊 Document Statistics** - See extraction details and content breakdown
@@ -522,19 +497,14 @@ def main():
 
         st.markdown("### 🛠️ Troubleshooting:")
         st.markdown("""
-        If you encounter issues, try:
-            1. Restarting the Streamlit app
-            2. Clearing browser cache
-            3. Checking your internet connection
-            4. Installing/updating PyTorch: `pip install torch==2.3.1`
-            5. Clearing Hugging Face cache: `rm -rf ~/.cache/huggingface`
-            6. Checking for dependency conflicts: `pip check`
+        If you encounter embedding errors, try:
+        1. Restarting the Streamlit app
+        2. Clearing browser cache
+        3. Checking your internet connection
+        4. Installing/updating PyTorch: `pip install torch --upgrade`
+        5. Clearing Hugging Face cache: `rm -rf ~/.cache/huggingface`
+        6. Checking for dependency conflicts: `pip check`
         """)
 
 if __name__ == "__main__":
-    try:
-        logging.info("Starting Streamlit application")
-        main()
-    except Exception as e:
-        logging.error(f"Application failed to start: {str(e)}")
-        st.error(f"Application failed to start: {str(e)}")
+    main()
