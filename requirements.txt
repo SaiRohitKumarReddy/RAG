@@ -1,11 +1,12 @@
-streamlit
+streamlit==1.37.1
 PyPDF2
 langchain
 langchain_community
 langchain_groq
+langchain-huggingface
 faiss-cpu
 sentence-transformers
-torch
+torch==2.3.1
 pymupdf
 pillow
 numpy
