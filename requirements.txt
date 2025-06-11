@@ -1,0 +1,12 @@
+streamlit
+PyPDF2
+langchain
+langchain_community
+langchain_groq
+faiss-cpu
+sentence-transformers
+torch
+pymupdf
+pillow
+numpy
+paddleocr
