@@ -10,3 +10,4 @@ pymupdf
 pillow
 numpy
 paddleocr
+paddlepaddle
