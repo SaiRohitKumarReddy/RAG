@@ -120,6 +120,7 @@ def create_embeddings_with_fallback():
         }
     ]
 
+    from langchain_huggingface import HuggingFaceEmbeddings
     for i, config in enumerate(embedding_configs):
         try:
             st.info(f"Attempting to load embedding model {i + 1}/{len(embedding_configs)}: {config['model_name']}")
