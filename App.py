@@ -44,6 +44,7 @@ PaddleOCR, PADDLEOCR_AVAILABLE = initialize_paddleocr()
 if not PADDLEOCR_AVAILABLE:
     # Comment out this line to suppress the warning
     # st.warning("⚠️ PaddleOCR not installed. OCR features will be disabled.")
+    pass
 
 
 def check_faiss_availability():
@@ -80,6 +81,7 @@ def extract_text_from_pdf(pdf_file):
     except Exception as e:
         st.error(f"Error reading PDF with PyPDF2: {str(e)}")
         return None
+
 
 def extract_images_and_ocr(pdf_file):
     """Extract images from PDF and perform OCR using PaddleOCR"""
@@ -120,6 +122,7 @@ def extract_images_and_ocr(pdf_file):
     except Exception as e:
         st.error(f"Error during OCR processing: {str(e)}")
         return ""
+
 
 def create_embeddings_with_fallback():
     """Create embeddings with fallback to SentenceTransformer"""
@@ -166,8 +169,10 @@ def create_embeddings_with_fallback():
         st.info("Trying direct SentenceTransformer model...")
         from sentence_transformers import SentenceTransformer
         model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder="./huggingface_cache")
+        
         def embed_query(text):
             return model.encode(text, normalize_embeddings=True).tolist()
+        
         embeddings = type('obj', (object,), {
             'embed_query': embed_query,
             'embed_documents': lambda texts: [embed_query(text) for text in texts]
@@ -253,6 +258,7 @@ def create_vector_store(text_chunks):
                 st.error(f"CUDA version: {torch.version.cuda}")
         return None
 
+
 def create_qa_chain(vector_store, api_key):
     """Create QA chain with Groq LLM and robust prompt"""
     try:
@@ -310,6 +316,7 @@ Answer:
     except Exception as e:
         st.error(f"Error creating QA chain: {str(e)}")
         return None
+
 
 def main():
     st.title("📄 Advanced PDF Document Analyzer")
@@ -513,6 +520,7 @@ def main():
         5. Clearing Hugging Face cache: `rm -rf ~/.cache/huggingface`
         6. Checking for dependency conflicts: `pip check`
         """)
+
 
 if __name__ == "__main__":
     main()
