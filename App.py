@@ -1,7 +1,4 @@
-# Clear button
-            if st.button("🗑️ Clear Question"):
-                st.session_state.current_question = ""
-                st.rerun()# CRITICAL: Set environment variables BEFORE any imports
+# CRITICAL: Set environment variables BEFORE any imports
 import os
 import sys
 
@@ -304,6 +301,8 @@ def main():
         st.session_state.qa_chain = None
     if 'processed_file' not in st.session_state:
         st.session_state.processed_file = None
+    if 'current_question' not in st.session_state:
+        st.session_state.current_question = ""
 
     # API Key
     api_key = st.secrets.get("GROQ_API_KEY")
@@ -404,6 +403,11 @@ def main():
                     st.session_state.current_question = (
                         "What risks, challenges, or issues are identified in this document?"
                     )
+
+            # Clear button
+            if st.button("🗑️ Clear Question"):
+                st.session_state.current_question = ""
+                st.rerun()
 
             # Question input
             question = st.text_input(
