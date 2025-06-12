@@ -395,7 +395,7 @@ def main():
 
             with col6:
                 if st.button("⚠️ Risks & Issues"):
-                    question = What risks, challenges, or issues are identified in this document?"
+                    question = "What risks, challenges, or issues are identified in this document?"
                     st.session_state.current_question = question
 
             
