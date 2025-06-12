@@ -1,12 +1,22 @@
 import streamlit as st
 import os
+
+# CRITICAL FIX: Disable Streamlit's file watcher to prevent PyTorch conflicts
+os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
 os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
+
+# Set up event loop policy for Windows compatibility
 import asyncio
 import sys
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
+
+# Set page config as early as possible
+st.set_page_config(page_title="Advanced PDF Analyzer", layout="wide")
+
+# Now import PyTorch and other heavy libraries
+import torch
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
@@ -19,11 +29,7 @@ import fitz  # PyMuPDF
 from PIL import Image
 import io
 import numpy as np
-import torch
 import traceback
-
-# Set page config as the first Streamlit command
-st.set_page_config(page_title="Advanced PDF Analyzer", layout="wide")
 
 # Defer PaddleOCR import to avoid early st.warning()
 def initialize_paddleocr():
