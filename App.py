@@ -371,19 +371,35 @@ def main():
             st.subheader("💬 Ask Questions")
 
             # Example buttons
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
             with col1:
-                if st.button("📋 Summary"):
+                if st.button("📋 Document Summary"):
                     question = "Provide a summary of this document"
                     st.session_state.current_question = question
             with col2:
-                if st.button("📊 Data"):
+                if st.button("📊Financial Data"):
                     question = "What numerical data or statistics are mentioned?"
                     st.session_state.current_question = question
             with col3:
-                if st.button("🎯 Key Points"):
+                if st.button("🎯 Key Findings"):
                     question = "What are the main findings or conclusions?"
                     st.session_state.current_question = question
+            with col4:
+                if st.button("📈 Performance Metrics"):
+                    question = "What performance metrics, KPIs, or statistical data are presented?"
+                    st.session_state.current_question = question
+            with col5:
+                if st.button("📋 Tables & Data"):
+                    question = "List all tables, charts, and structured data found in the document with their key information."
+                    st.session_state.current_question = question
+
+            with col6:
+                if st.button("⚠️ Risks & Issues"):
+                    question = What risks, challenges, or issues are identified in this document?"
+                    st.session_state.current_question = question
+
+            
+
 
             # Question input
             question = st.text_input(
