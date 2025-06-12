@@ -40,8 +40,10 @@ def initialize_paddleocr():
         return None, False
 
 PaddleOCR, PADDLEOCR_AVAILABLE = initialize_paddleocr()
+# Only show warning in sidebar or suppress it entirely for deployment
 if not PADDLEOCR_AVAILABLE:
-    st.warning("⚠️ PaddleOCR not installed. Install with: pip install paddleocr")
+    # Comment out this line to suppress the warning
+    # st.warning("⚠️ PaddleOCR not installed. OCR features will be disabled.")
 
 
 def check_faiss_availability():
