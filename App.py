@@ -1,4 +1,7 @@
-# CRITICAL: Set environment variables BEFORE any imports
+# Clear button
+            if st.button("🗑️ Clear Question"):
+                st.session_state.current_question = ""
+                st.rerun()# CRITICAL: Set environment variables BEFORE any imports
 import os
 import sys
 
@@ -371,19 +374,36 @@ def main():
             st.subheader("💬 Ask Questions")
 
             # Example buttons
-            col1, col2, col3 = st.columns(3)
+            st.markdown("**💡 Example Questions:**")
+            col1, col2 = st.columns(2)
+ 
             with col1:
-                if st.button("📋 Summary"):
-                    question = "Provide a summary of this document"
-                    st.session_state.current_question = question
+                if st.button("📋 Document Summary"):
+                    st.session_state.current_question = (
+                        "Provide a comprehensive summary of this document including key findings, main topics, and important data."
+                    )
+                if st.button("📊 Financial Data"):
+                    st.session_state.current_question = (
+                        "What financial data, revenue figures, or monetary values are mentioned in this document?"
+                    )
+                if st.button("📈 Performance Metrics"):
+                    st.session_state.current_question = (
+                        "What performance metrics, KPIs, or statistical data are presented?"
+                    )
+ 
             with col2:
-                if st.button("📊 Data"):
-                    question = "What numerical data or statistics are mentioned?"
-                    st.session_state.current_question = question
-            with col3:
-                if st.button("🎯 Key Points"):
-                    question = "What are the main findings or conclusions?"
-                    st.session_state.current_question = question
+                if st.button("🎯 Key Findings"):
+                    st.session_state.current_question = (
+                        "What are the main conclusions, recommendations, or key findings?"
+                    )
+                if st.button("📋 Tables & Data"):
+                    st.session_state.current_question = (
+                        "List all tables, charts, and structured data found in the document with their key information."
+                    )
+                if st.button("⚠️ Risks & Issues"):
+                    st.session_state.current_question = (
+                        "What risks, challenges, or issues are identified in this document?"
+                    )
 
             # Question input
             question = st.text_input(
