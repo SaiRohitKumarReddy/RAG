@@ -2,7 +2,7 @@ streamlit
 PyPDF2
 langchain
 langchain_community
-langchain_groq
+langchain-openai
 langchain-huggingface
 faiss-cpu
 sentence-transformers
@@ -18,4 +18,4 @@ openai
 chromadb
 pydantic
 python-dotenv
-
+opencv-python-headless
