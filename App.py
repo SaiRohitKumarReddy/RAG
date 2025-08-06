@@ -1,37 +1,29 @@
-# CRITICAL: Set environment variables BEFORE any imports
 import os
 import sys
-
-# Disable Streamlit's file watcher completely
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
 os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_SERVING"] = "false"
 
-# Set event loop policy for Windows/Linux compatibility
 import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
-# Import streamlit FIRST before any heavy libraries
 import streamlit as st
 
-# Set page config immediately after streamlit import
 st.set_page_config(
     page_title="Advanced PDF Analyzer", 
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Now import other libraries in order of importance
 import tempfile
 import io
 import traceback
 import numpy as np
 from PIL import Image
 
-# Lazy imports to avoid conflicts
 @st.cache_resource
 def get_torch():
     """Lazy load PyTorch"""
@@ -67,12 +59,12 @@ def get_embeddings():
     return HuggingFaceEmbeddings
 
 @st.cache_resource
-def get_groq():
-    """Lazy load Groq"""
-    from langchain_groq import ChatGroq
+def get_openai():
+    """Lazy load OpenAI"""
+    from langchain_openai import ChatOpenAI
     from langchain.chains import RetrievalQA
     from langchain.prompts import PromptTemplate
-    return ChatGroq, RetrievalQA, PromptTemplate
+    return ChatOpenAI, RetrievalQA, PromptTemplate
 
 @st.cache_resource
 def get_paddleocr():
@@ -209,8 +201,7 @@ def create_vector_store(text_chunks):
         embeddings = create_embeddings()
         if not embeddings:
             return None
-
-        # Create vector store in batches
+            
         batch_size = 20
         vector_store = None
         
@@ -233,26 +224,25 @@ def create_vector_store(text_chunks):
         progress_bar.empty()
         
         if vector_store:
-            st.success("✅ Vector store created")
+            st.success("Vector store created")
             return vector_store
         else:
-            st.error("❌ Vector store creation failed")
+            st.error("Vector store creation failed")
             return None
             
     except Exception as e:
         st.error(f"Vector store error: {str(e)}")
         return None
 
-
 def create_qa_chain(vector_store, api_key):
-    """Create QA chain"""
+    
     try:
-        ChatGroq, RetrievalQA, PromptTemplate = get_groq()
+        ChatOpenAI, RetrievalQA, PromptTemplate = get_openai()
         
-        llm = ChatGroq(
-            groq_api_key=api_key,
-            model_name="llama-3.3-70b-versatile",
-            temperature=0.1,
+        llm = ChatOpenAI(
+            openai_api_key=api_key,
+            model_name="gpt-4o-mini",
+            temperature=0.3,
             max_tokens=1024
         )
 
@@ -291,7 +281,7 @@ Answer:
 
 
 def main():
-    st.title("📄 Advanced PDF Analyzer")
+    st.title("Advanced PDF Analyzer")
     st.markdown("Upload PDF and ask questions about content, tables, and data")
 
     # Initialize session state
@@ -302,23 +292,23 @@ def main():
     if 'processed_file' not in st.session_state:
         st.session_state.processed_file = None
 
-    # API Key
-    api_key = st.secrets.get("GROQ_API_KEY")
+    
+    api_key = st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        st.error("❌ GROQ_API_KEY not found in secrets!")
+        st.error("OPENAI_API_KEY not found in secrets!")
         st.stop()
 
-    # System info
-    with st.expander("🔧 System Info"):
+   
+    with st.expander("System Info"):
         torch = get_torch()
         st.info(f"PyTorch: {torch.__version__}")
         st.info(f"CUDA: {torch.cuda.is_available()}")
 
-    # OCR option
+ 
     _, ocr_available = get_paddleocr()
-    use_ocr = st.checkbox("🔍 Enable OCR", value=False, disabled=not ocr_available)
+    use_ocr = st.checkbox("Enable OCR", value=False, disabled=not ocr_available)
 
-    # File upload
+    
     uploaded_file = st.file_uploader("Choose PDF", type="pdf")
 
     if uploaded_file:
@@ -329,12 +319,12 @@ def main():
             st.session_state.qa_chain = None
             st.session_state.processed_file = uploaded_file.name
 
-            with st.spinner("📖 Extracting text..."):
+            with st.spinner("Extracting text..."):
                 pdf_text = extract_text_from_pdf(uploaded_file)
 
             ocr_text = ""
             if use_ocr and ocr_available:
-                with st.spinner("🔍 Running OCR..."):
+                with st.spinner(" Running OCR..."):
                     ocr_text = extract_images_and_ocr(uploaded_file)
 
             full_text = ""
@@ -344,9 +334,9 @@ def main():
                 full_text += "\n--- OCR CONTENT ---\n" + ocr_text
 
             if full_text:
-                st.success(f"✅ Extracted {len(full_text):,} characters")
+                st.success(f"Extracted {len(full_text):,} characters")
 
-                with st.spinner("🔄 Creating chunks..."):
+                with st.spinner(" Creating chunks..."):
                     RecursiveCharacterTextSplitter = get_text_splitter()
                     text_splitter = RecursiveCharacterTextSplitter(
                         chunk_size=800,
@@ -354,34 +344,34 @@ def main():
                         length_function=len
                     )
                     text_chunks = text_splitter.split_text(full_text)
-                    st.info(f"📄 Created {len(text_chunks)} chunks")
+                    st.info(f"Created {len(text_chunks)} chunks")
 
-                with st.spinner("🧠 Creating vector store..."):
+                with st.spinner(" Creating vector store..."):
                     st.session_state.vector_store = create_vector_store(text_chunks)
 
                 if st.session_state.vector_store:
-                    st.success("✅ Ready for questions!")
+                    st.success(" Ready for questions!")
                     st.session_state.qa_chain = create_qa_chain(
                         st.session_state.vector_store, api_key
                     )
 
-        # Q&A Interface
+        
         if st.session_state.vector_store and st.session_state.qa_chain:
             st.markdown("---")
-            st.subheader("💬 Ask Questions")
+            st.subheader("Ask Questions")
 
             # Example buttons
             col1, col2, col3 = st.columns(3)
             with col1:
-                if st.button("📋 Summary"):
+                if st.button("Summary"):
                     question = "Provide a summary of this document"
                     st.session_state.current_question = question
             with col2:
-                if st.button("📊 Data"):
+                if st.button("Data"):
                     question = "What numerical data or statistics are mentioned?"
                     st.session_state.current_question = question
             with col3:
-                if st.button("🎯 Key Points"):
+                if st.button("Key Points"):
                     question = "What are the main findings or conclusions?"
                     st.session_state.current_question = question
 
@@ -393,14 +383,14 @@ def main():
             )
 
             if question:
-                with st.spinner("🤔 Processing..."):
+                with st.spinner("Processing..."):
                     try:
                         response = st.session_state.qa_chain.invoke({"query": question})
-                        st.markdown("### 💡 Answer:")
+                        st.markdown("Answer:")
                         st.write(response["result"])
                         
                         if response.get("source_documents"):
-                            with st.expander("📚 Sources"):
+                            with st.expander("Sources"):
                                 for i, doc in enumerate(response["source_documents"][:3]):
                                     st.markdown(f"**Source {i + 1}:**")
                                     content = doc.page_content
@@ -410,14 +400,14 @@ def main():
                         st.error(f"Error: {str(e)}")
 
     else:
-        st.info("👆 Upload a PDF to start")
+        st.info("Upload a PDF to start")
         st.markdown("### Features:")
         st.markdown("""
-        - **📄 Text Extraction** - PyPDF2 for regular text
-        - **🔍 OCR Support** - PaddleOCR for images and tables
-        - **🧠 Smart Q&A** - Groq LLM with document analysis
-        - **📊 Data Analysis** - Handles reports, research papers
-        - **⚡ Fast Processing** - Optimized for performance
+        - **Text Extraction** - PyPDF2 for regular text
+        - **OCR Support** - PaddleOCR for images and tables
+        - **Smart Q&A** - OpenAI GPT-4o-mini with document analysis
+        - **Data Analysis** - Handles reports, research papers
+        - **Fast Processing** - Optimized for performance
         """)
 
 
