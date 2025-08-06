@@ -10,12 +10,9 @@ torch
 pymupdf
 pillow
 numpy
-paddleocr
-paddlepaddle
 transformers
 tiktoken
 openai
 chromadb
 pydantic
-python-dotenv
-opencv-python-headless
+pytesseract
