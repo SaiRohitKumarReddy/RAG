@@ -3,7 +3,7 @@ import sys
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
 os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_SERVING"] = "false"
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # For PaddleOCR compatibility
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # For compatibility
 
 import asyncio
 if sys.platform == "win32":
@@ -12,7 +12,6 @@ elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
 import streamlit as st
-
 st.set_page_config(
     page_title="Advanced PDF Analyzer",
     layout="wide",
@@ -68,24 +67,6 @@ def get_openai():
     return ChatOpenAI, RetrievalQA, PromptTemplate
 
 @st.cache_resource
-def get_paddleocr():
-    """Lazy load PaddleOCR with detailed error handling"""
-    try:
-        import paddleocr
-        from paddleocr import PaddleOCR
-        # Test initialization with minimal settings
-        ocr = PaddleOCR(use_angle_cls=False, lang='en', show_log=True, use_gpu=False)
-        # Verify OCR can process a dummy image
-        import numpy as np
-        dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
-        ocr.ocr(dummy_image, cls=False)
-        st.info("PaddleOCR initialized successfully")
-        return PaddleOCR, True
-    except Exception as e:
-        st.error(f"PaddleOCR initialization failed: {str(e)}\nFull traceback: {traceback.format_exc()}. Falling back to Tesseract OCR.")
-        return None, False
-
-@st.cache_resource
 def get_tesseract():
     """Lazy load Tesseract OCR"""
     try:
@@ -94,6 +75,9 @@ def get_tesseract():
         pytesseract.get_tesseract_version()
         st.info("Tesseract OCR initialized successfully")
         return pytesseract, True
+    except ImportError:
+        st.error("Tesseract initialization failed: pytesseract module not found. Install with: pip install pytesseract")
+        return None, False
     except Exception as e:
         st.error(f"Tesseract initialization failed: {str(e)}. OCR functionality will be disabled.")
         return None, False
@@ -124,13 +108,16 @@ def extract_text_from_pdf(pdf_file):
         return None
 
 def extract_images_and_ocr(pdf_file):
-    """Extract images from PDF and perform OCR with PaddleOCR or Tesseract fallback"""
-    PaddleOCR, ocr_available = get_paddleocr()
+    """Extract images from PDF and perform OCR with Tesseract"""
     pytesseract, tesseract_available = get_tesseract()
     fitz, fitz_available = get_fitz()
     
     if not fitz_available:
-        st.warning("PDF image processing (PyMuPDF) not available.")
+        st.warning("PDF image processing (PyMuPDF) not available. Install with: pip install pymupdf")
+        return ""
+
+    if not tesseract_available:
+        st.warning("Tesseract OCR not available. Install pytesseract and Tesseract binary.")
         return ""
 
     try:
@@ -147,27 +134,9 @@ def extract_images_and_ocr(pdf_file):
                 img_data = pix.tobytes("png")
                 image = Image.open(io.BytesIO(img_data))
 
-                if ocr_available:
-                    try:
-                        ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=False)
-                        img_array = np.array(image)
-                        ocr_results = ocr.ocr(img_array, cls=True)
-                        if ocr_results and ocr_results[0]:
-                            page_ocr_text = f"\n--- OCR Page {page_num + 1} ---\n"
-                            for line in ocr_results[0]:
-                                if line[1][0].strip() and line[1][1] > 0.6:  # Higher confidence threshold
-                                    page_ocr_text += line[1][0] + " "
-                            ocr_text += page_ocr_text + "\n"
-                            continue  # Skip Tesseract if PaddleOCR succeeds
-                    except Exception as e:
-                        st.warning(f"PaddleOCR failed for page {page_num + 1}: {str(e)}. Trying Tesseract.")
-
-                if tesseract_available:
-                    page_ocr_text = f"\n--- OCR Page {page_num + 1} ---\n"
-                    page_ocr_text += pytesseract.image_to_string(image, lang='eng')
-                    ocr_text += page_ocr_text + "\n"
-                else:
-                    st.warning(f"OCR unavailable for page {page_num + 1}. No OCR engine available.")
+                page_ocr_text = f"\n--- OCR Page {page_num + 1} ---\n"
+                page_ocr_text += pytesseract.image_to_string(image, lang='eng')
+                ocr_text += page_ocr_text + "\n"
             except Exception as e:
                 st.warning(f"OCR processing failed for page {page_num + 1}: {str(e)}")
                 continue
@@ -321,7 +290,7 @@ def main():
 
     api_key = st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        st.error("OPENAI_API_KEY not found in secrets!")
+        st.error("OPENAI_API_KEY not found in secrets! Add it to .streamlit/secrets.toml")
         st.stop()
 
     with st.expander("System Info"):
@@ -329,10 +298,9 @@ def main():
         st.info(f"PyTorch: {torch.__version__}")
         st.info(f"CUDA: {torch.cuda.is_available()}")
 
-    _, ocr_available = get_paddleocr()
     _, tesseract_available = get_tesseract()
-    use_ocr = st.checkbox("Enable OCR", value=(ocr_available or tesseract_available), 
-                         disabled=not (ocr_available or tesseract_available))
+    use_ocr = st.checkbox("Enable OCR", value=tesseract_available, 
+                         disabled=not tesseract_available)
 
     uploaded_file = st.file_uploader("Choose PDF", type="pdf")
 
@@ -348,11 +316,11 @@ def main():
                 pdf_text = extract_text_from_pdf(uploaded_file)
 
             ocr_text = ""
-            if use_ocr and (ocr_available or tesseract_available):
+            if use_ocr and tesseract_available:
                 with st.spinner("Running OCR..."):
                     ocr_text = extract_images_and_ocr(uploaded_file)
-            elif use_ocr and not (ocr_available or tesseract_available):
-                st.warning("OCR is not available due to missing dependencies. Continuing with text extraction only.")
+            elif use_ocr and not tesseract_available:
+                st.warning("OCR is not available due to missing Tesseract dependencies. Continuing with text extraction only.")
 
             full_text = pdf_text or ""
             if ocr_text:
@@ -426,7 +394,7 @@ def main():
         st.markdown("### Features:")
         st.markdown("""
         - **Text Extraction** - PyPDF2 for regular text
-        - **OCR Support** - PaddleOCR with Tesseract fallback for images and tables
+        - **OCR Support** - Tesseract for images and tables
         - **Smart Q&A** - OpenAI GPT-4o-mini with document analysis
         - **Data Analysis** - Handles reports, research papers
         - **Fast Processing** - Optimized for performance
