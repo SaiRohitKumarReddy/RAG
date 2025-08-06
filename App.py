@@ -3,6 +3,7 @@ import sys
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
 os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_SERVING"] = "false"
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # For PaddleOCR compatibility
 
 import asyncio
 if sys.platform == "win32":
@@ -13,7 +14,7 @@ elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
 import streamlit as st
 
 st.set_page_config(
-    page_title="Advanced PDF Analyzer", 
+    page_title="Advanced PDF Analyzer",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -30,7 +31,7 @@ def get_torch():
     import torch
     return torch
 
-@st.cache_resource  
+@st.cache_resource
 def get_pdf_reader():
     """Lazy load PyPDF2"""
     from PyPDF2 import PdfReader
@@ -68,14 +69,14 @@ def get_openai():
 
 @st.cache_resource
 def get_paddleocr():
-    """Lazy load PaddleOCR with proper error handling"""
+    """Lazy load PaddleOCR with robust error handling"""
     try:
-        # Set environment variables for PaddleOCR
-        os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
         from paddleocr import PaddleOCR
+        # Test minimal initialization to catch dependency issues early
+        PaddleOCR(use_angle_cls=False, lang='en', show_log=False, use_gpu=False)
         return PaddleOCR, True
     except Exception as e:
-        st.warning(f"PaddleOCR not available: {str(e)}")
+        st.warning(f"PaddleOCR initialization failed: {str(e)}. OCR functionality will be disabled.")
         return None, False
 
 @st.cache_resource
@@ -86,7 +87,6 @@ def get_fitz():
         return fitz, True
     except ImportError:
         return None, False
-
 
 def extract_text_from_pdf(pdf_file):
     """Extract text from PDF file using PyPDF2"""
@@ -104,14 +104,13 @@ def extract_text_from_pdf(pdf_file):
         st.error(f"Error reading PDF: {str(e)}")
         return None
 
-
 def extract_images_and_ocr(pdf_file):
     """Extract images from PDF and perform OCR"""
     PaddleOCR, ocr_available = get_paddleocr()
     fitz, fitz_available = get_fitz()
     
     if not (ocr_available and fitz_available):
-        st.warning("OCR or PDF processing not available")
+        st.warning("OCR or PDF image processing is not available. Ensure PaddleOCR and PyMuPDF are installed with all dependencies.")
         return ""
 
     try:
@@ -146,9 +145,8 @@ def extract_images_and_ocr(pdf_file):
         pdf_document.close()
         return ocr_text
     except Exception as e:
-        st.error(f"Error during OCR: {str(e)}")
+        st.error(f"OCR processing failed: {str(e)}. Continuing without OCR.")
         return ""
-
 
 @st.cache_resource
 def create_embeddings():
@@ -176,7 +174,6 @@ def create_embeddings():
     except Exception as e:
         st.error(f"Embedding creation failed: {str(e)}")
         return None
-
 
 def create_vector_store(text_chunks):
     """Create FAISS vector store"""
@@ -235,7 +232,6 @@ def create_vector_store(text_chunks):
         return None
 
 def create_qa_chain(vector_store, api_key):
-    
     try:
         ChatOpenAI, RetrievalQA, PromptTemplate = get_openai()
         
@@ -279,7 +275,6 @@ Answer:
         st.error(f"QA chain error: {str(e)}")
         return None
 
-
 def main():
     st.title("Advanced PDF Analyzer")
     st.markdown("Upload PDF and ask questions about content, tables, and data")
@@ -292,23 +287,19 @@ def main():
     if 'processed_file' not in st.session_state:
         st.session_state.processed_file = None
 
-    
     api_key = st.secrets.get("OPENAI_API_KEY")
     if not api_key:
         st.error("OPENAI_API_KEY not found in secrets!")
         st.stop()
 
-   
     with st.expander("System Info"):
         torch = get_torch()
         st.info(f"PyTorch: {torch.__version__}")
         st.info(f"CUDA: {torch.cuda.is_available()}")
 
- 
     _, ocr_available = get_paddleocr()
-    use_ocr = st.checkbox("Enable OCR", value=False, disabled=not ocr_available)
+    use_ocr = st.checkbox("Enable OCR", value=ocr_available, disabled=not ocr_available)
 
-    
     uploaded_file = st.file_uploader("Choose PDF", type="pdf")
 
     if uploaded_file:
@@ -324,19 +315,19 @@ def main():
 
             ocr_text = ""
             if use_ocr and ocr_available:
-                with st.spinner(" Running OCR..."):
+                with st.spinner("Running OCR..."):
                     ocr_text = extract_images_and_ocr(uploaded_file)
+            elif use_ocr and not ocr_available:
+                st.warning("OCR is not available due to missing dependencies. Continuing with text extraction only.")
 
-            full_text = ""
-            if pdf_text:
-                full_text += pdf_text
+            full_text = pdf_text or ""
             if ocr_text:
                 full_text += "\n--- OCR CONTENT ---\n" + ocr_text
 
             if full_text:
                 st.success(f"Extracted {len(full_text):,} characters")
 
-                with st.spinner(" Creating chunks..."):
+                with st.spinner("Creating chunks..."):
                     RecursiveCharacterTextSplitter = get_text_splitter()
                     text_splitter = RecursiveCharacterTextSplitter(
                         chunk_size=800,
@@ -346,21 +337,19 @@ def main():
                     text_chunks = text_splitter.split_text(full_text)
                     st.info(f"Created {len(text_chunks)} chunks")
 
-                with st.spinner(" Creating vector store..."):
+                with st.spinner("Creating vector store..."):
                     st.session_state.vector_store = create_vector_store(text_chunks)
 
                 if st.session_state.vector_store:
-                    st.success(" Ready for questions!")
+                    st.success("Ready for questions!")
                     st.session_state.qa_chain = create_qa_chain(
                         st.session_state.vector_store, api_key
                     )
 
-        
         if st.session_state.vector_store and st.session_state.qa_chain:
             st.markdown("---")
             st.subheader("Ask Questions")
 
-            # Example buttons
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("Summary"):
@@ -375,7 +364,6 @@ def main():
                     question = "What are the main findings or conclusions?"
                     st.session_state.current_question = question
 
-            # Question input
             question = st.text_input(
                 "Your question:",
                 value=st.session_state.get('current_question', ''),
@@ -409,7 +397,6 @@ def main():
         - **Data Analysis** - Handles reports, research papers
         - **Fast Processing** - Optimized for performance
         """)
-
 
 if __name__ == "__main__":
     main()
