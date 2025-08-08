@@ -55,8 +55,8 @@ def get_faiss():
 @st.cache_resource
 def get_embeddings():
     """Lazy load embeddings"""
-    from langchain_huggingface import HuggingFaceEmbeddings
-    return HuggingFaceEmbeddings
+    from langchain_openai import OpenAIEmbeddings
+    return OpenAIEmbeddings
 
 @st.cache_resource
 def get_openai():
@@ -151,18 +151,17 @@ def extract_images_and_ocr(pdf_file):
 
 @st.cache_resource
 def create_embeddings():
-    """Create embeddings with fallback"""
+    """Create embeddings with OpenAI"""
     try:
         torch = get_torch()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
-        HuggingFaceEmbeddings = get_embeddings()
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'},  # Force CPU to avoid conflicts
-            encode_kwargs={'normalize_embeddings': True},
-            cache_folder="./cache"
+        OpenAIEmbeddings = get_embeddings()
+        embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            openai_api_key=st.secrets.get("OPENAI_API_KEY"),
+            encode_kwargs={'normalize_embeddings': True}
         )
         
         # Test embedding
