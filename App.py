@@ -1,3 +1,4 @@
+```python
 import os
 import sys
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
@@ -13,7 +14,7 @@ elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
 
 import streamlit as st
 st.set_page_config(
-    page_title="Advanced PDF Analyzer",
+    page_title="Advanced Document Analyzer",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -23,6 +24,7 @@ import io
 import traceback
 import numpy as np
 from PIL import Image
+from docx import Document
 
 @st.cache_resource
 def get_torch():
@@ -35,6 +37,12 @@ def get_pdf_reader():
     """Lazy load PyPDF2"""
     from PyPDF2 import PdfReader
     return PdfReader
+
+@st.cache_resource
+def get_docx_reader():
+    """Lazy load python-docx"""
+    from docx import Document
+    return Document
 
 @st.cache_resource
 def get_text_splitter():
@@ -107,6 +115,22 @@ def extract_text_from_pdf(pdf_file):
         st.error(f"Error reading PDF: {str(e)}")
         return None
 
+def extract_text_from_docx(docx_file):
+    """Extract text from Word document using python-docx"""
+    try:
+        Document = get_docx_reader()
+        docx_file.seek(0)
+        doc = Document(docx_file)
+        text = ""
+        for para_num, paragraph in enumerate(doc.paragraphs):
+            if paragraph.text.strip():
+                text += f"\n--- Paragraph {para_num + 1} ---\n"
+                text += paragraph.text
+        return text
+    except Exception as e:
+        st.error(f"Error reading Word document: {str(e)}")
+        return None
+
 def extract_images_and_ocr(pdf_file):
     """Extract images from PDF and perform OCR with Tesseract"""
     pytesseract, tesseract_available = get_tesseract()
@@ -160,8 +184,7 @@ def create_embeddings():
         OpenAIEmbeddings = get_embeddings()
         embeddings = OpenAIEmbeddings(
             model="text-embedding-3-small",
-            openai_api_key=st.secrets.get("OPENAI_API_KEY"),
-            encode_kwargs={'normalize_embeddings': True}
+            openai_api_key=st.secrets.get("OPENAI_API_KEY")
         )
         
         # Test embedding
@@ -276,8 +299,8 @@ Answer:
         return None
 
 def main():
-    st.title("Advanced PDF Analyzer")
-    st.markdown("Upload PDF and ask questions about content, tables, and data")
+    st.title("Advanced Document Analyzer")
+    st.markdown("Upload PDF or Word document and ask questions about content, tables, and data")
 
     # Initialize session state
     if 'vector_store' not in st.session_state:
@@ -298,10 +321,10 @@ def main():
         st.info(f"CUDA: {torch.cuda.is_available()}")
 
     _, tesseract_available = get_tesseract()
-    use_ocr = st.checkbox("Enable OCR", value=tesseract_available, 
+    use_ocr = st.checkbox("Enable OCR (PDF only)", value=tesseract_available, 
                          disabled=not tesseract_available)
 
-    uploaded_file = st.file_uploader("Choose PDF", type="pdf")
+    uploaded_file = st.file_uploader("Choose PDF or Word document", type=["pdf", "docx"])
 
     if uploaded_file:
         file_changed = (st.session_state.processed_file != uploaded_file.name)
@@ -312,16 +335,25 @@ def main():
             st.session_state.processed_file = uploaded_file.name
 
             with st.spinner("Extracting text..."):
-                pdf_text = extract_text_from_pdf(uploaded_file)
+                if uploaded_file.name.lower().endswith('.pdf'):
+                    text = extract_text_from_pdf(uploaded_file)
+                    ocr_text = ""
+                    if use_ocr and tesseract_available:
+                        with st.spinner("Running OCR..."):
+                            ocr_text = extract_images_and_ocr(uploaded_file)
+                    elif use_ocr and not tesseract_available:
+                        st.warning("OCR is not available due to missing Tesseract dependencies. Continuing with text extraction only.")
+                elif uploaded_file.name.lower().endswith('.docx'):
+                    text = extract_text_from_docx(uploaded_file)
+                    ocr_text = ""  # OCR not applicable for Word documents
+                    if use_ocr:
+                        st.warning("OCR is only supported for PDF files. Skipping OCR for Word document.")
+                else:
+                    st.error("Unsupported file type. Please upload a PDF or Word document.")
+                    text = None
+                    ocr_text = ""
 
-            ocr_text = ""
-            if use_ocr and tesseract_available:
-                with st.spinner("Running OCR..."):
-                    ocr_text = extract_images_and_ocr(uploaded_file)
-            elif use_ocr and not tesseract_available:
-                st.warning("OCR is not available due to missing Tesseract dependencies. Continuing with text extraction only.")
-
-            full_text = pdf_text or ""
+            full_text = text or ""
             if ocr_text:
                 full_text += "\n--- OCR CONTENT ---\n" + ocr_text
 
@@ -389,11 +421,11 @@ def main():
                         st.error(f"Error: {str(e)}")
 
     else:
-        st.info("Upload a PDF to start")
+        st.info("Upload a PDF or Word document to start")
         st.markdown("### Features:")
         st.markdown("""
-        - **Text Extraction** - PyPDF2 for regular text
-        - **OCR Support** - Tesseract for images and tables
+        - **Text Extraction** - PyPDF2 for PDFs, python-docx for Word documents
+        - **OCR Support** - Tesseract for images and tables (PDF only)
         - **Smart Q&A** - OpenAI GPT-4o-mini with document analysis
         - **Data Analysis** - Handles reports, research papers
         - **Fast Processing** - Optimized for performance
@@ -401,3 +433,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
