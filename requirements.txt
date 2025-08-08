@@ -3,16 +3,12 @@ PyPDF2
 langchain
 langchain_community
 langchain-openai
-langchain-huggingface
 faiss-cpu
-sentence-transformers
 torch
 pymupdf
 pillow
 numpy
-transformers
-tiktoken
 openai
-chromadb
 pydantic
 pytesseract
+python-docx
