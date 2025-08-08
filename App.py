@@ -1,4 +1,3 @@
-```python
 import os
 import sys
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
@@ -433,4 +432,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
+
