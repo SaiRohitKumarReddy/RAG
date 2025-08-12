@@ -298,7 +298,7 @@ Answer:
         return None
 
 def main():
-    st.title("Advanced Document Analyzer")
+    st.title("Advanced Text Extractor")
     st.markdown("Upload PDF or Word document and ask questions about content, tables, and data")
 
     # Initialize session state
