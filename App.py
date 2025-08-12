@@ -298,7 +298,7 @@ Answer:
         return None
 
 def main():
-    st.title("Advanced Text Extractor (OCR Based)
+    st.title("Advanced Text Extractor (OCR Based)")
 
 Objective
 The Advanced Text Extractor is a Streamlit-based web application designed to enable users to upload PDFs (including scanned PDFs via OCR) and Microsoft Word (.docx) documents, extract and process their content (text and images), and query the content using a question-answering system. Leveraging natural language processing (NLP) and optical character recognition (OCR), the application provides context-aware responses, making it ideal for analyzing reports, research papers, and data-heavy documents.
