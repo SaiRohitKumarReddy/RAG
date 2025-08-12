@@ -305,7 +305,7 @@ The Advanced Text Extractor is a Streamlit-based web application designed to ena
 Key features include:
     st.markdown("""
 Objective
-The Advanced Text Extractor is a Streamlit-based web application designed to enable users to upload PDFs (including scanned PDFs via OCR) and Microsoft Word (.docx) documents, extract and process their content (text and images), and query the content using a question-answering system. Leveraging natural language processing (NLP) and optical character recognition (OCR), the application provides context-aware responses, making it ideal for analyzing reports, research papers, and data-heavy documents.
+The Advanced Text Extractor is a Streamlit-based web application designed to enable users to upload PDFs (including scanned PDFs) and Microsoft Word (.docx) documents, extract and process their content (text and images), and query the content using a question-answering system. Leveraging natural language processing (NLP) and optical character recognition (OCR), the application provides context-aware responses, making it ideal for analyzing reports, research papers, and data-heavy documents.
 Key features include:
 - Text extraction from PDFs (including scanned PDFs via OCR) and Word (.docx) documents.
 - OCR for extracting text from images in scanned PDFs.
@@ -325,46 +325,44 @@ The application integrates several libraries and tools to achieve its functional
 - PyTorch: Deep learning framework supporting CUDA availability checks and compatibility with FAISS, configured for CPU compatibility.
 - python-docx: Library for extracting text from Word (.docx) documents.
 - Other Libraries: PIL for image handling, NumPy for numerical operations, tempfile, io, asyncio, and sys for file stream management and platform compatibility.
-    """)
 Step-by-Step Workflow
 The application follows a structured workflow to process PDFs (including scanned PDFs via OCR) and Word (.docx) documents and enable question-answering:
-1.	Environment Setup:
-o	Configures Streamlit environment variables to optimize server performance and disable file watching.
-o	Sets asyncio event loop policy for platform compatibility.
-o	Configures Streamlit with a wide layout and collapsed sidebar.
-2.	Resource Loading:
-o	Uses @st.cache_resource to lazily load dependencies (e.g., PyTorch, PyPDF2, Tesseract, LangChain, python-docx) to reduce startup time.
-o	Implements error handling for missing dependencies with user feedback.
-3.	Document Upload:
-o	Users upload PDFs (including scanned PDFs) or Word (.docx) documents via Streamlit’s file uploader.
-o	Tracks file changes to avoid redundant processing.
-4.	Text Extraction:
-o	Extracts text from text-based PDFs using PyPDF2 and from Word (.docx) documents using python-docx, with error handling for corrupted files.
-5.	OCR Processing (Optional):
-o	Renders pages of PDFs (including scanned PDFs) as images using PyMuPDF and extracts text via Tesseract OCR if enabled. OCR is only supported for PDFs (including scanned PDFs), with a warning issued for Word (.docx) documents.
-o	Limits processing to 10 pages for efficiency and handles errors gracefully.
-6.	Text Chunking:
-o	Combines extracted text and OCR output (for PDFs, including scanned PDFs), then splits into 800-character chunks with 100-character overlap using LangChain’s RecursiveCharacterTextSplitter.
-7.	Embedding Generation:
-o	Generates embeddings using OpenAI’s text-embedding-3-small model, configured with an API key from Streamlit secrets and cached for reuse.
-8.	Vector Store Creation:
-o	Creates a FAISS vector store from text chunks in batches for efficient memory usage.
-o	Provides progress feedback via Streamlit’s progress bar.
-9.	Question-Answering Setup:
-o	Initializes OpenAI’s GPT-4o-mini with a custom prompt template for context-aware answers, including instructions for detailed answers, handling numerical data, and fallback responses for incomplete or missing information.
-o	Builds a LangChain RetrievalQA chain with the vector store retriever.
-10.	User Interaction and Q&A:
-o	Offers buttons for predefined queries (Summary, Data, Key Points) and a text input for custom questions.
-o	Retrieves relevant document chunks and generates answers, displaying results and source snippets.
-11.	Error Handling:
-o	Uses Streamlit’s feedback mechanisms (st.info, st.warning, st.error) to report successes and issues.
-o	Ensures functionality with fallbacks for missing dependencies.
-12.	Initial UI:
-o	Displays feature overview (text extraction, OCR for PDFs including scanned PDFs, Q&A) when no document is uploaded, prompting users to start analysis.
+- Environment Setup:
+  - Configures Streamlit environment variables to optimize server performance and disable file watching.
+  - Sets asyncio event loop policy for platform compatibility.
+  - Configures Streamlit with a wide layout and collapsed sidebar.
+- Resource Loading:
+  - Uses @st.cache_resource to lazily load dependencies (e.g., PyTorch, PyPDF2, Tesseract, LangChain, python-docx) to reduce startup time.
+  - Implements error handling for missing dependencies with user feedback.
+- Document Upload:
+  - Users upload PDFs (including scanned PDFs) or Word (.docx) documents via Streamlit's file uploader.
+  - Tracks file changes to avoid redundant processing.
+- Text Extraction:
+  - Extracts text from text-based PDFs using PyPDF2 and from Word (.docx) documents using python-docx, with error handling for corrupted files.
+- OCR Processing (Optional):
+  - Renders pages of PDFs (including scanned PDFs) as images using PyMuPDF and extracts text via Tesseract OCR if enabled. OCR is only supported for PDFs (including scanned PDFs), with a warning issued for Word (.docx) documents.
+  - Limits processing to 10 pages for efficiency and handles errors gracefully.
+- Text Chunking:
+  - Combines extracted text and OCR output (for PDFs, including scanned PDFs), then splits into 800-character chunks with 100-character overlap using LangChain's RecursiveCharacterTextSplitter.
+- Embedding Generation:
+  - Generates embeddings using OpenAI's text-embedding-3-small model, configured with an API key from Streamlit secrets and cached for reuse.
+- Vector Store Creation:
+  - Creates a FAISS vector store from text chunks in batches for efficient memory usage.
+  - Provides progress feedback via Streamlit's progress bar.
+- Question-Answering Setup:
+  - Initializes OpenAI's GPT-4o-mini with a custom prompt template for context-aware answers, including instructions for detailed answers, handling numerical data, and fallback responses for incomplete or missing information.
+  - Builds a LangChain RetrievalQA chain with the vector store retriever.
+- User Interaction and Q&A:
+  - Offers buttons for predefined queries (Summary, Data, Key Points) and a text input for custom questions.
+  - Retrieves relevant document chunks and generates answers, displaying results and source snippets.
+- Error Handling:
+  - Uses Streamlit's feedback mechanisms (st.info, st.warning, st.error) to report successes and issues.
+  - Ensures functionality with fallbacks for missing dependencies.
+- Initial UI:
+  - Displays feature overview (text extraction, OCR for PDFs including scanned PDFs, Q&A) when no document is uploaded, prompting users to start analysis.
 Conclusion
-The Advanced Text Extractor is a robust tool for extracting and querying content from PDFs (including scanned PDFs via OCR) and Word (.docx) documents, integrating PyPDF2, PyMuPDF, Tesseract, LangChain, FAISS, python-docx, and OpenAI’s GPT-4o-mini. Its modular design, efficient resource management, and comprehensive error handling ensure reliability and scalability.
-
-)")
+The Advanced Text Extractor is a robust tool for extracting and querying content from PDFs (including scanned PDFs via OCR) and Word (.docx) documents, integrating PyPDF2, PyMuPDF, Tesseract, LangChain, FAISS, python-docx, and OpenAI's GPT-4o-mini. Its modular design, efficient resource management, and comprehensive error handling ensure reliability and scalability.
+    """)
     st.markdown("Upload PDF or Word document and ask questions about content, tables, and data")
 
     # Initialize session state
