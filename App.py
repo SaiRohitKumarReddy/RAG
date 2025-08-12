@@ -303,12 +303,12 @@ def main():
 Objective
 The Advanced Text Extractor is a Streamlit-based web application designed to enable users to upload PDFs (including scanned PDFs via OCR) and Microsoft Word (.docx) documents, extract and process their content (text and images), and query the content using a question-answering system. Leveraging natural language processing (NLP) and optical character recognition (OCR), the application provides context-aware responses, making it ideal for analyzing reports, research papers, and data-heavy documents.
 Key features include:
-•	Text extraction from PDFs (including scanned PDFs via OCR) and Word (.docx) documents.
-•	OCR for extracting text from images in scanned PDFs.
-•	Creation of a searchable vector store for document content.
-•	Question-answering powered by a large language model (LLM).
-•	Support for queries about summaries, numerical data, and key findings.
-•	Optimized for performance, scalability, and usability.
+- Text extraction from PDFs (including scanned PDFs via OCR) and Word (.docx) documents.
+- OCR for extracting text from images in scanned PDFs.
+- Creation of a searchable vector store for document content.
+- Question-answering powered by a large language model (LLM).
+- Support for queries about summaries, numerical data, and key findings.
+- Optimized for performance, scalability, and usability.
 Key Technologies Used
 The application integrates several libraries and tools to achieve its functionality:
 1.	Streamlit: Python framework for building the interactive web interface, handling file uploads, and displaying results.
