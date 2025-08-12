@@ -13,7 +13,7 @@ elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
 
 import streamlit as st
 st.set_page_config(
-    page_title="Advanced Text Extractor",
+    page_title="Advanced Text Extractor(OCR Based)",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -298,7 +298,68 @@ Answer:
         return None
 
 def main():
-    st.title("Advanced Text Extractor")
+    st.title("Advanced Text Extractor (OCR Based)
+
+Objective
+The Advanced Text Extractor is a Streamlit-based web application designed to enable users to upload PDFs (including scanned PDFs via OCR) and Microsoft Word (.docx) documents, extract and process their content (text and images), and query the content using a question-answering system. Leveraging natural language processing (NLP) and optical character recognition (OCR), the application provides context-aware responses, making it ideal for analyzing reports, research papers, and data-heavy documents.
+Key features include:
+•	Text extraction from PDFs (including scanned PDFs via OCR) and Word (.docx) documents.
+•	OCR for extracting text from images in scanned PDFs.
+•	Creation of a searchable vector store for document content.
+•	Question-answering powered by a large language model (LLM).
+•	Support for queries about summaries, numerical data, and key findings.
+•	Optimized for performance, scalability, and usability.
+Key Technologies Used
+The application integrates several libraries and tools to achieve its functionality:
+1.	Streamlit: Python framework for building the interactive web interface, handling file uploads, and displaying results.
+2.	PyPDF2: Library for extracting text from text-based PDFs.
+3.	PyMuPDF (fitz): Library for rendering pages of PDFs (including scanned PDFs) as images for OCR processing.
+4.	Tesseract OCR (pytesseract): Open-source OCR engine for extracting text from images in scanned PDFs.
+5.	LangChain: Framework for LLM-based applications, providing text chunking, embeddings, and question-answering utilities.
+6.	FAISS: Library for efficient similarity search, used to create a vector store for document retrieval.
+7.	OpenAI GPT-4o-mini: Lightweight LLM for generating context-aware answers.
+8.	PyTorch: Deep learning framework supporting CUDA availability checks and compatibility with FAISS, configured for CPU compatibility.
+9.	python-docx: Library for extracting text from Word (.docx) documents.
+10.	Other Libraries: PIL for image handling, NumPy for numerical operations, tempfile, io, asyncio, and sys for file stream management and platform compatibility.
+Step-by-Step Workflow
+The application follows a structured workflow to process PDFs (including scanned PDFs via OCR) and Word (.docx) documents and enable question-answering:
+1.	Environment Setup:
+o	Configures Streamlit environment variables to optimize server performance and disable file watching.
+o	Sets asyncio event loop policy for platform compatibility.
+o	Configures Streamlit with a wide layout and collapsed sidebar.
+2.	Resource Loading:
+o	Uses @st.cache_resource to lazily load dependencies (e.g., PyTorch, PyPDF2, Tesseract, LangChain, python-docx) to reduce startup time.
+o	Implements error handling for missing dependencies with user feedback.
+3.	Document Upload:
+o	Users upload PDFs (including scanned PDFs) or Word (.docx) documents via Streamlit’s file uploader.
+o	Tracks file changes to avoid redundant processing.
+4.	Text Extraction:
+o	Extracts text from text-based PDFs using PyPDF2 and from Word (.docx) documents using python-docx, with error handling for corrupted files.
+5.	OCR Processing (Optional):
+o	Renders pages of PDFs (including scanned PDFs) as images using PyMuPDF and extracts text via Tesseract OCR if enabled. OCR is only supported for PDFs (including scanned PDFs), with a warning issued for Word (.docx) documents.
+o	Limits processing to 10 pages for efficiency and handles errors gracefully.
+6.	Text Chunking:
+o	Combines extracted text and OCR output (for PDFs, including scanned PDFs), then splits into 800-character chunks with 100-character overlap using LangChain’s RecursiveCharacterTextSplitter.
+7.	Embedding Generation:
+o	Generates embeddings using OpenAI’s text-embedding-3-small model, configured with an API key from Streamlit secrets and cached for reuse.
+8.	Vector Store Creation:
+o	Creates a FAISS vector store from text chunks in batches for efficient memory usage.
+o	Provides progress feedback via Streamlit’s progress bar.
+9.	Question-Answering Setup:
+o	Initializes OpenAI’s GPT-4o-mini with a custom prompt template for context-aware answers, including instructions for detailed answers, handling numerical data, and fallback responses for incomplete or missing information.
+o	Builds a LangChain RetrievalQA chain with the vector store retriever.
+10.	User Interaction and Q&A:
+o	Offers buttons for predefined queries (Summary, Data, Key Points) and a text input for custom questions.
+o	Retrieves relevant document chunks and generates answers, displaying results and source snippets.
+11.	Error Handling:
+o	Uses Streamlit’s feedback mechanisms (st.info, st.warning, st.error) to report successes and issues.
+o	Ensures functionality with fallbacks for missing dependencies.
+12.	Initial UI:
+o	Displays feature overview (text extraction, OCR for PDFs including scanned PDFs, Q&A) when no document is uploaded, prompting users to start analysis.
+Conclusion
+The Advanced Text Extractor is a robust tool for extracting and querying content from PDFs (including scanned PDFs via OCR) and Word (.docx) documents, integrating PyPDF2, PyMuPDF, Tesseract, LangChain, FAISS, python-docx, and OpenAI’s GPT-4o-mini. Its modular design, efficient resource management, and comprehensive error handling ensure reliability and scalability.
+
+)")
     st.markdown("Upload PDF or Word document and ask questions about content, tables, and data")
 
     # Initialize session state
