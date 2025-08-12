@@ -13,7 +13,7 @@ elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
 
 import streamlit as st
 st.set_page_config(
-    page_title="Advanced Document Analyzer",
+    page_title="Advanced Text Extractor",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
