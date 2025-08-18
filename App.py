@@ -105,6 +105,22 @@ def determine_document_type(pdf_file, use_ocr):
         pdf_reader = PdfReader(pdf_file)
         fitz, fitz_available = get_fitz()
         
+        if not fitz_available:
+            # Fallback to basic text analysis if PyMuPDF is not available
+            text = ""
+            for page in pdf_reader.pages:
+                page_text = page.extract_text()
+                if page_text and page_text.strip():
+                    text += page_text
+            
+            text_length = len(text.strip())
+            if text_length > 100:
+                return "Text-based PDF"
+            elif text_length > 0:
+                return "Sparse Text PDF"
+            else:
+                return "Unknown PDF"
+        
         # Check for image content (indicative of scanned or infographic PDF)
         pdf_file.seek(0)
         pdf_bytes = pdf_file.read()
@@ -121,15 +137,16 @@ def determine_document_type(pdf_file, use_ocr):
         
         pdf_document.close()
         
-        # Get text content and calculate length
+        # Get text content
         text = ""
         for page in pdf_reader.pages:
             page_text = page.extract_text()
             if page_text and page_text.strip():
                 text += page_text
-        text_length = len(text.strip()) if text else 0
-
-        # Logic to determine document type
+        
+        text_length = len(text.strip())
+        
+        # Enhanced logic to determine document type
         if has_images and image_count > 5:
             return "Infographic/Visual PDF"
         elif has_images and text_length < 200:
@@ -380,17 +397,14 @@ def main():
     if uploaded_file:
         file_changed = (st.session_state.processed_file != uploaded_file.name)
 
-        # Display document type immediately after upload
-        if uploaded_file.name.lower().endswith('.pdf'):
-            document_type = determine_document_type(uploaded_file, use_ocr)
-            st.info(f"Document Type: {document_type}")
-        elif uploaded_file.name.lower().endswith('.docx'):
-            st.info("Document Type: Word Document")
-
         if file_changed or not st.session_state.vector_store:
             st.session_state.vector_store = None
             st.session_state.qa_chain = None
             st.session_state.processed_file = uploaded_file.name
+
+            # Display document type
+            document_type = "Word Document" if uploaded_file.name.lower().endswith('.docx') else determine_document_type(uploaded_file, use_ocr)
+            st.info(f"Document Type: {document_type}")
 
             with st.spinner("Extracting text..."):
                 if uploaded_file.name.lower().endswith('.pdf'):
@@ -487,6 +501,7 @@ def main():
         - **Smart Q&A** - OpenAI GPT-4o-mini with document analysis
         - **Data Analysis** - Handles reports, research papers
         - **Fast Processing** - Optimized for performance
+        - **Enhanced Document Type Detection** - Automatically identifies document characteristics
         """)
 
 if __name__ == "__main__":
