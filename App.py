@@ -105,22 +105,6 @@ def determine_document_type(pdf_file, use_ocr):
         pdf_reader = PdfReader(pdf_file)
         fitz, fitz_available = get_fitz()
         
-        if not fitz_available:
-            # Fallback to basic text analysis if PyMuPDF is not available
-            text = ""
-            for page in pdf_reader.pages:
-                page_text = page.extract_text()
-                if page_text and page_text.strip():
-                    text += page_text
-            
-            text_length = len(text.strip())
-            if text_length > 100:
-                return "Text-based PDF"
-            elif text_length > 0:
-                return "Sparse Text PDF"
-            else:
-                return "Unknown PDF"
-        
         # Check for image content (indicative of scanned or infographic PDF)
         pdf_file.seek(0)
         pdf_bytes = pdf_file.read()
@@ -146,7 +130,7 @@ def determine_document_type(pdf_file, use_ocr):
         
         text_length = len(text.strip())
         
-        # Enhanced logic to determine document type
+        # Logic to determine document type
         if has_images and image_count > 5:
             return "Infographic/Visual PDF"
         elif has_images and text_length < 200:
@@ -501,7 +485,6 @@ def main():
         - **Smart Q&A** - OpenAI GPT-4o-mini with document analysis
         - **Data Analysis** - Handles reports, research papers
         - **Fast Processing** - Optimized for performance
-        - **Enhanced Document Type Detection** - Automatically identifies document characteristics
         """)
 
 if __name__ == "__main__":
