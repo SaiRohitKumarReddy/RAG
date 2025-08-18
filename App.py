@@ -128,15 +128,15 @@ def determine_document_type(pdf_file, use_ocr):
             if page_text and page_text.strip():
                 text += page_text
         
-        # Logic to determine document type
+        # Logic to determine and display document type
         if has_images and use_ocr and image_count > 2:
-            return "Infographic PDF"  # High image count suggests infographic
+            return "Infographic PDF"
         elif has_images and use_ocr:
-            return "Scanned PDF"  # Some images with OCR enabled
+            return "Scanned PDF"
         elif text.strip():
-            return "PDF"  # Regular text-based PDF
+            return "Text-based PDF"
         else:
-            return "Unknown"
+            return "Unknown PDF"
             
     except Exception as e:
         st.warning(f"Could not determine document type: {str(e)}")
