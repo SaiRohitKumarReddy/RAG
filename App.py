@@ -121,14 +121,15 @@ def determine_document_type(pdf_file, use_ocr):
         
         pdf_document.close()
         
-        # Get text content
+        # Get text content and calculate length
         text = ""
         for page in pdf_reader.pages:
             page_text = page.extract_text()
             if page_text and page_text.strip():
                 text += page_text
-        
-        # Logic to determine and display document type
+        text_length = len(text.strip()) if text else 0
+
+        # Logic to determine document type
         if has_images and image_count > 5:
             return "Infographic/Visual PDF"
         elif has_images and text_length < 200:
