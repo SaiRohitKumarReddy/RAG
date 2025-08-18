@@ -98,6 +98,50 @@ def get_fitz():
     except ImportError:
         return None, False
 
+def determine_document_type(pdf_file, use_ocr):
+    """Determine the document type based on content analysis"""
+    try:
+        PdfReader = get_pdf_reader()
+        pdf_reader = PdfReader(pdf_file)
+        fitz, fitz_available = get_fitz()
+        
+        # Check for image content (indicative of scanned or infographic PDF)
+        pdf_file.seek(0)
+        pdf_bytes = pdf_file.read()
+        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+        has_images = False
+        image_count = 0
+        
+        for page_num in range(min(len(pdf_document), 3)):  # Check first 3 pages
+            page = pdf_document.load_page(page_num)
+            images = page.get_images()
+            if images:
+                has_images = True
+                image_count += len(images)
+        
+        pdf_document.close()
+        
+        # Get text content
+        text = ""
+        for page in pdf_reader.pages:
+            page_text = page.extract_text()
+            if page_text and page_text.strip():
+                text += page_text
+        
+        # Logic to determine document type
+        if has_images and use_ocr and image_count > 2:
+            return "Infographic PDF"  # High image count suggests infographic
+        elif has_images and use_ocr:
+            return "Scanned PDF"  # Some images with OCR enabled
+        elif text.strip():
+            return "PDF"  # Regular text-based PDF
+        else:
+            return "Unknown"
+            
+    except Exception as e:
+        st.warning(f"Could not determine document type: {str(e)}")
+        return "Unknown"
+
 def extract_text_from_pdf(pdf_file):
     """Extract text from PDF file using PyPDF2"""
     try:
@@ -333,6 +377,10 @@ def main():
             st.session_state.qa_chain = None
             st.session_state.processed_file = uploaded_file.name
 
+            # Display document type
+            document_type = "Word Document" if uploaded_file.name.lower().endswith('.docx') else determine_document_type(uploaded_file, use_ocr)
+            st.info(f"Document Type: {document_type}")
+
             with st.spinner("Extracting text..."):
                 if uploaded_file.name.lower().endswith('.pdf'):
                     text = extract_text_from_pdf(uploaded_file)
@@ -432,4 +480,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
