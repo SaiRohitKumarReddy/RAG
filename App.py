@@ -352,8 +352,6 @@ def main():
         st.session_state.qa_chain = None
     if 'processed_file' not in st.session_state:
         st.session_state.processed_file = None
-    if 'document_type' not in st.session_state:
-        st.session_state.document_type = None
 
     api_key = st.secrets.get("OPENAI_API_KEY")
     if not api_key:
@@ -371,11 +369,7 @@ def main():
 
     # Document Type note
     st.markdown("### Document Type:")
-    if st.session_state.document_type:
-        st.info(f"**{st.session_state.document_type}**")
-    else:
-        st.info("*Upload a document to analyze its type*")
-
+    
     uploaded_file = st.file_uploader("Choose PDF or Word document", type=["pdf", "docx"])
 
     if uploaded_file:
@@ -388,8 +382,7 @@ def main():
 
             # Display document type
             document_type = "Word Document" if uploaded_file.name.lower().endswith('.docx') else determine_document_type(uploaded_file, use_ocr)
-            st.session_state.document_type = document_type
-            st.rerun()
+            st.info(f"Document Type: {document_type}")
 
             with st.spinner("Extracting text..."):
                 if uploaded_file.name.lower().endswith('.pdf'):
@@ -478,7 +471,6 @@ def main():
                         st.error(f"Error: {str(e)}")
 
     else:
-        st.session_state.document_type = None
         st.info("Upload a PDF or Word document to start")
         st.markdown("### Features:")
         st.markdown("""
