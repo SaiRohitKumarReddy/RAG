@@ -105,14 +105,30 @@ def determine_document_type(pdf_file, use_ocr):
         pdf_reader = PdfReader(pdf_file)
         fitz, fitz_available = get_fitz()
         
+        if not fitz_available:
+            # Fallback analysis without PyMuPDF
+            text = ""
+            for page in pdf_reader.pages:
+                page_text = page.extract_text()
+                if page_text and page_text.strip():
+                    text += page_text
+            
+            if text.strip():
+                return "Text-based PDF"
+            else:
+                return "Image-based PDF (OCR recommended)"
+        
         # Check for image content (indicative of scanned or infographic PDF)
         pdf_file.seek(0)
         pdf_bytes = pdf_file.read()
         pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
         has_images = False
         image_count = 0
+        total_pages = len(pdf_document)
         
-        for page_num in range(min(len(pdf_document), 3)):  # Check first 3 pages
+        # Check first 3 pages or all pages if less than 3
+        pages_to_check = min(total_pages, 3)
+        for page_num in range(pages_to_check):
             page = pdf_document.load_page(page_num)
             images = page.get_images()
             if images:
@@ -128,19 +144,35 @@ def determine_document_type(pdf_file, use_ocr):
             if page_text and page_text.strip():
                 text += page_text
         
-        # Logic to determine document type
-        if has_images and use_ocr and image_count > 2:
-            return "Infographic PDF"  # High image count suggests infographic
-        elif has_images and use_ocr:
-            return "Scanned PDF"  # Some images with OCR enabled
-        elif text.strip():
-            return "PDF"  # Regular text-based PDF
+        # Enhanced logic to determine document type
+        text_length = len(text.strip())
+        pages_with_images_ratio = image_count / max(pages_to_check, 1)
+        
+        if has_images and image_count > 5:
+            return "Infographic/Visual PDF"
+        elif has_images and text_length < 200:
+            return "Scanned PDF (OCR recommended)"
+        elif has_images and text_length > 200:
+            return "Mixed Content PDF (Text + Images)"
+        elif text_length > 100:
+            return "Text-based PDF"
+        elif text_length > 0:
+            return "Sparse Text PDF"
         else:
-            return "Unknown"
+            return "Image-only PDF (OCR required)"
             
     except Exception as e:
         st.warning(f"Could not determine document type: {str(e)}")
-        return "Unknown"
+        return "Unknown PDF Type"
+
+def get_document_type(uploaded_file, use_ocr):
+    """Get document type based on file extension and content analysis"""
+    if uploaded_file.name.lower().endswith('.docx'):
+        return "Microsoft Word Document (.docx)"
+    elif uploaded_file.name.lower().endswith('.pdf'):
+        return determine_document_type(uploaded_file, use_ocr)
+    else:
+        return "Unknown Document Type"
 
 def extract_text_from_pdf(pdf_file):
     """Extract text from PDF file using PyPDF2"""
@@ -352,6 +384,8 @@ def main():
         st.session_state.qa_chain = None
     if 'processed_file' not in st.session_state:
         st.session_state.processed_file = None
+    if 'document_type' not in st.session_state:
+        st.session_state.document_type = None
 
     api_key = st.secrets.get("OPENAI_API_KEY")
     if not api_key:
@@ -367,19 +401,34 @@ def main():
     use_ocr = st.checkbox("Enable OCR (PDF only)", value=tesseract_available, 
                          disabled=not tesseract_available)
 
+    # Add document type note before file uploader
+    st.markdown("### Document Type:")
+    st.markdown("*Upload a document to analyze its type and content structure*")
+    
     uploaded_file = st.file_uploader("Choose PDF or Word document", type=["pdf", "docx"])
+
+    # Display current document type if file is uploaded
+    if uploaded_file and st.session_state.document_type:
+        st.markdown(f"**Document Type:** {st.session_state.document_type}")
+        st.markdown("---")
 
     if uploaded_file:
         file_changed = (st.session_state.processed_file != uploaded_file.name)
 
         if file_changed or not st.session_state.vector_store:
+            # Reset session state for new file
             st.session_state.vector_store = None
             st.session_state.qa_chain = None
             st.session_state.processed_file = uploaded_file.name
 
-            # Display document type
-            document_type = "Word Document" if uploaded_file.name.lower().endswith('.docx') else determine_document_type(uploaded_file, use_ocr)
-            st.info(f"Document Type: {document_type}")
+            # Analyze and display document type
+            with st.spinner("Analyzing document type..."):
+                document_type = get_document_type(uploaded_file, use_ocr)
+                st.session_state.document_type = document_type
+            
+            # Display the document type immediately
+            st.markdown(f"**Document Type:** {document_type}")
+            st.markdown("---")
 
             with st.spinner("Extracting text..."):
                 if uploaded_file.name.lower().endswith('.pdf'):
@@ -468,6 +517,8 @@ def main():
                         st.error(f"Error: {str(e)}")
 
     else:
+        # Reset document type when no file is uploaded
+        st.session_state.document_type = None
         st.info("Upload a PDF or Word document to start")
         st.markdown("### Features:")
         st.markdown("""
@@ -476,6 +527,7 @@ def main():
         - **Smart Q&A** - OpenAI GPT-4o-mini with document analysis
         - **Data Analysis** - Handles reports, research papers
         - **Fast Processing** - Optimized for performance
+        - **Document Type Analysis** - Automatically identifies document structure
         """)
 
 if __name__ == "__main__":
