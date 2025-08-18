@@ -375,14 +375,17 @@ def main():
     if uploaded_file:
         file_changed = (st.session_state.processed_file != uploaded_file.name)
 
+        # Display document type immediately after upload
+        if uploaded_file.name.lower().endswith('.pdf'):
+            document_type = determine_document_type(uploaded_file, use_ocr)
+            st.info(f"Document Type: {document_type}")
+        elif uploaded_file.name.lower().endswith('.docx'):
+            st.info("Document Type: Word Document")
+
         if file_changed or not st.session_state.vector_store:
             st.session_state.vector_store = None
             st.session_state.qa_chain = None
             st.session_state.processed_file = uploaded_file.name
-
-            # Display document type
-            document_type = "Word Document" if uploaded_file.name.lower().endswith('.docx') else determine_document_type(uploaded_file, use_ocr)
-            st.info(f"Document Type: {document_type}")
 
             with st.spinner("Extracting text..."):
                 if uploaded_file.name.lower().endswith('.pdf'):
