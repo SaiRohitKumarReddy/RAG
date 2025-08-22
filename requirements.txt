@@ -12,3 +12,4 @@ openai
 pydantic
 pytesseract
 python-docx
+pdfplumber
