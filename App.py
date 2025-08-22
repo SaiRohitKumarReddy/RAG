@@ -22,6 +22,7 @@ import tempfile
 import io
 import traceback
 import numpy as np
+import pandas as pd
 from PIL import Image, ImageEnhance, ImageFilter
 from docx import Document
 import PyPDF2
@@ -30,6 +31,10 @@ import pytesseract
 import re
 from openai import OpenAI
 import fitz  # PyMuPDF
+import json
+import docx
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 # Langchain imports for Advanced Analyzer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -82,13 +87,70 @@ def extract_text_with_ocr(image):
         return ""
     try:
         processed_image = preprocess_image_for_ocr(image)
-        text = pytesseract.image_to_string(processed_image, lang='eng')
+        config = "--psm 6"  # Assume a single uniform block of text for handwriting
+        text = pytesseract.image_to_string(processed_image, lang='eng', config=config)
         return text.strip()
     except Exception as e:
         st.error(f"OCR Error: {str(e)}")
         return ""
 
-# --- Summarizer Mode Functions (from Smart Document Analyzer) ---
+# --- New: Excel/CSV Processing ---
+def process_spreadsheet(file, file_type):
+    try:
+        if file_type == 'csv':
+            df = pd.read_csv(file)
+        elif file_type == 'xlsx':
+            df = pd.read_excel(file, engine='openpyxl')
+        else:
+            return None, "Unsupported spreadsheet format"
+        
+        # Basic analysis
+        analysis = {
+            'row_count': len(df),
+            'column_count': len(df.columns),
+            'columns': list(df.columns),
+            'missing_values': df.isnull().sum().to_dict(),
+            'numeric_columns': df.select_dtypes(include=[np.number]).columns.tolist(),
+            'summary_stats': df.describe().to_dict() if not df.select_dtypes(include=[np.number]).empty else None
+        }
+        return df, analysis
+    except Exception as e:
+        return None, f"Error processing spreadsheet: {str(e)}"
+
+# --- New: Export Functions ---
+def export_to_word(content, filename):
+    doc = docx.Document()
+    doc.add_heading(filename, 0)
+    doc.add_paragraph(content)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def export_to_pdf(content, filename):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    c.setFont("Helvetica", 12)
+    text_object = c.beginText(40, 750)
+    for line in content.split('\n'):
+        text_object.textLine(line)
+    c.drawText(text_object)
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def export_to_json(content, filename):
+    data = {'filename': filename, 'content': content}
+    return json.dumps(data, indent=2).encode('utf-8')
+
+def export_to_excel(df, filename):
+    buffer = io.BytesIO()
+    df.to_excel(buffer, index=False, engine='openpyxl')
+    buffer.seek(0)
+    return buffer.getvalue()
+
+# --- Summarizer Mode Functions ---
 def summarize_is_text_substantial(text, min_words=30):
     if not text or not text.strip():
         return False
@@ -126,6 +188,14 @@ def summarize_find_index_pages(file, file_type):
                     if keyword in text:
                         potential_pages.append(0)
                         break
+        elif file_type in ['jpg', 'png', 'tiff']:
+            file.seek(0)
+            image = Image.open(file)
+            text = extract_text_with_ocr(image)
+            for keyword in index_keywords:
+                if keyword in text.lower():
+                    potential_pages.append(0)
+                    break
     except Exception as e:
         st.warning(f"Error while searching for index pages: {str(e)}")
     return list(set(potential_pages))
@@ -188,13 +258,28 @@ def summarize_extract_text_from_docx(file):
         st.error(f"DOCX extraction failed: {str(e)}")
         return ""
 
+def summarize_extract_text_from_image(file):
+    try:
+        file.seek(0)
+        image = Image.open(file)
+        text = extract_text_with_ocr(image)
+        return text
+    except Exception as e:
+        st.error(f"Image extraction failed: {str(e)}")
+        return ""
+
 def summarize_extract_text_smart(file, file_type):
     extraction_log = []
     extraction_log.append("Attempting to extract text from first page...")
     if file_type == 'pdf':
         first_page_text = summarize_extract_text_from_pdf(file)
-    else:
+    elif file_type == 'docx':
         first_page_text = summarize_extract_text_from_docx(file)
+    elif file_type in ['jpg', 'png', 'tiff']:
+        first_page_text = summarize_extract_text_from_image(file)
+    else:
+        return "", ["Unsupported file type"], "unsupported"
+    
     if summarize_is_text_substantial(first_page_text):
         extraction_log.append("First page contains substantial content")
         return first_page_text, extraction_log, "first_page"
@@ -205,11 +290,13 @@ def summarize_extract_text_smart(file, file_type):
         extraction_log.append(f"Found potential index pages: {[p + 1 for p in index_pages]}")
         if file_type == 'pdf':
             index_text = summarize_extract_text_from_pdf_pages(file, index_pages[:3])
-        else:
+        elif file_type == 'docx':
             file.seek(0)
             doc = Document(file)
             full_text = "\n".join([para.text for para in doc.paragraphs[:100] if para.text.strip()])
             index_text = full_text[:3000]
+        else:  # image
+            index_text = summarize_extract_text_from_image(file)
         if summarize_is_text_substantial(index_text):
             extraction_log.append("Successfully extracted content from index pages")
             return index_text, extraction_log, "index_pages"
@@ -249,7 +336,7 @@ def summarize_text_with_openai(text, extraction_method):
     except Exception as e:
         return f"API Error: {str(e)}"
 
-# --- Analyzer Mode Functions (from Advanced Text Extractor) ---
+# --- Analyzer Mode Functions ---
 @st.cache_resource
 def analyzer_get_pdf_reader():
     from PyPDF2 import PdfReader
@@ -285,14 +372,20 @@ def analyzer_get_fitz():
     except ImportError:
         return None, False
 
-def analyzer_determine_document_type(pdf_file, use_ocr):
+def analyzer_determine_document_type(file, file_type, use_ocr):
+    if file_type == 'docx':
+        return "Word Document"
+    elif file_type in ['jpg', 'png', 'tiff']:
+        return "Image Document (OCR required)"
+    
     try:
         PdfReader = analyzer_get_pdf_reader()
-        pdf_reader = PdfReader(pdf_file)
+        file.seek(0)
+        pdf_reader = PdfReader(file)
         fitz, fitz_available = analyzer_get_fitz()
         
-        pdf_file.seek(0)
-        pdf_bytes = pdf_file.read()
+        file.seek(0)
+        pdf_bytes = file.read()
         pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
         has_images = False
         image_count = 0
@@ -361,6 +454,16 @@ def analyzer_extract_text_from_docx(docx_file):
         st.error(f"Error reading Word document: {str(e)}")
         return None
 
+def analyzer_extract_text_from_image(image_file):
+    try:
+        image_file.seek(0)
+        image = Image.open(image_file)
+        text = extract_text_with_ocr(image)
+        return text
+    except Exception as e:
+        st.error(f"Image extraction failed: {str(e)}")
+        return ""
+
 def analyzer_extract_images_and_ocr(pdf_file):
     pytesseract, tesseract_available = get_tesseract()
     fitz, fitz_available = analyzer_get_fitz()
@@ -388,7 +491,8 @@ def analyzer_extract_images_and_ocr(pdf_file):
                 image = Image.open(io.BytesIO(img_data))
 
                 page_ocr_text = f"\n--- OCR Page {page_num + 1} ---\n"
-                page_ocr_text += pytesseract.image_to_string(image, lang='eng')
+                config = "--psm 6"  # Assume a single uniform block of text for handwriting
+                page_ocr_text += pytesseract.image_to_string(image, lang='eng', config=config)
                 ocr_text += page_ocr_text + "\n"
             except Exception as e:
                 st.warning(f"OCR processing failed for page {page_num + 1}: {str(e)}")
@@ -525,12 +629,12 @@ Answer:
 # --- Main App Logic ---
 def main():
     st.title("Document Analyzer Suite")
-    st.markdown("Choose a mode to analyze your PDF or Word document.")
+    st.markdown("Choose a mode to analyze your PDF, Word, image, or spreadsheet.")
 
     # Mode Selection
     mode = st.radio(
         "Select Mode:",
-        ["Summarize the Document", "Advanced Analyzer"],
+        ["Summarize the Document", "Advanced Analyzer", "Spreadsheet Analyzer"],
         horizontal=True
     )
 
@@ -544,7 +648,7 @@ def main():
         st.header("Document Summarizer")
         st.markdown("*AI-powered summarization with smart content detection*")
 
-        uploaded_file = st.file_uploader("Choose a file to summarize", type=["pdf", "docx"], key="summarize_uploader")
+        uploaded_file = st.file_uploader("Choose a file to summarize", type=["pdf", "docx", "jpg", "png", "tiff"], key="summarize_uploader")
 
         if uploaded_file is not None:
             file_extension = uploaded_file.name.split(".")[-1].lower()
@@ -599,21 +703,49 @@ def main():
 
                         if summary and not summary.startswith("API Error"):
                             method_suffix = "_index" if extraction_method == "index_pages" else "_firstpage"
-                            filename = f"summary_{uploaded_file.name.split('.')[0]}{method_suffix}.txt"
+                            base_filename = uploaded_file.name.split('.')[0]
+                            filename = f"summary_{base_filename}{method_suffix}"
                             download_content = f"Document: {uploaded_file.name}\nContent Source: {method_info.get(extraction_method, 'Unknown')}\nSUMMARY:\n" + summary
-                            st.download_button(
-                                label="Download Summary",
-                                data=download_content,
-                                file_name=filename,
-                                mime="text/plain",
-                                use_container_width=True
-                            )
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.download_button(
+                                    label="Download as Text",
+                                    data=download_content,
+                                    file_name=f"{filename}.txt",
+                                    mime="text/plain",
+                                    use_container_width=True
+                                )
+                            with col2:
+                                st.download_button(
+                                    label="Download as Word",
+                                    data=export_to_word(download_content, filename),
+                                    file_name=f"{filename}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    use_container_width=True
+                                )
+                            with col3:
+                                st.download_button(
+                                    label="Download as PDF",
+                                    data=export_to_pdf(download_content, filename),
+                                    file_name=f"{filename}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                            with col4:
+                                st.download_button(
+                                    label="Download as JSON",
+                                    data=export_to_json(download_content, filename),
+                                    file_name=f"{filename}.json",
+                                    mime="application/json",
+                                    use_container_width=True
+                                )
             else:
                 st.error("Unable to extract readable text. Try a different file.")
 
     elif mode == "Advanced Analyzer":
         st.header("Advanced Text Analyzer (OCR Based)")
-        st.markdown("Upload document and ask questions about content, tables, and data")
+        st.markdown("Upload document or image and ask questions about content, tables, and data")
 
         # Initialize session state for analyzer
         if 'analyzer_vector_store' not in st.session_state:
@@ -626,12 +758,15 @@ def main():
             st.session_state.analyzer_document_type = None
 
         _, tesseract_available = get_tesseract()
-        use_ocr = st.checkbox("Enable OCR (PDF only)", value=tesseract_available, 
+        use_ocr = st.checkbox("Enable OCR (PDF and Images)", value=tesseract_available, 
                               disabled=not tesseract_available, key="analyzer_ocr")
 
-        uploaded_file = st.file_uploader("Choose PDF or Word document", type=["pdf", "docx"], key="analyzer_uploader")
+        uploaded_file = st.file_uploader("Choose PDF, Word, or Image document", 
+                                       type=["pdf", "docx", "jpg", "png", "tiff"], 
+                                       key="analyzer_uploader")
 
         if uploaded_file:
+            file_extension = uploaded_file.name.split(".")[-1].lower()
             file_changed = (st.session_state.analyzer_processed_file != uploaded_file.name)
 
             if file_changed or not st.session_state.analyzer_vector_store:
@@ -640,13 +775,10 @@ def main():
                 st.session_state.analyzer_processed_file = uploaded_file.name
 
                 # Determine and store document type
-                if uploaded_file.name.lower().endswith('.docx'):
-                    st.session_state.analyzer_document_type = "Word Document"
-                else:
-                    st.session_state.analyzer_document_type = analyzer_determine_document_type(uploaded_file, use_ocr)
+                st.session_state.analyzer_document_type = analyzer_determine_document_type(uploaded_file, file_extension, use_ocr)
 
                 with st.spinner("Extracting text..."):
-                    if uploaded_file.name.lower().endswith('.pdf'):
+                    if file_extension == 'pdf':
                         text = analyzer_extract_text_from_pdf(uploaded_file)
                         ocr_text = ""
                         if use_ocr and tesseract_available:
@@ -654,13 +786,18 @@ def main():
                                 ocr_text = analyzer_extract_images_and_ocr(uploaded_file)
                         elif use_ocr and not tesseract_available:
                             st.warning("OCR is not available due to missing Tesseract dependencies. Continuing with text extraction only.")
-                    elif uploaded_file.name.lower().endswith('.docx'):
+                    elif file_extension == 'docx':
                         text = analyzer_extract_text_from_docx(uploaded_file)
                         ocr_text = ""  # OCR not applicable for Word documents
                         if use_ocr:
-                            st.warning("OCR is only supported for PDF files. Skipping OCR for Word document.")
+                            st.warning("OCR is only supported for PDF and image files. Skipping OCR for Word document.")
+                    elif file_extension in ['jpg', 'png', 'tiff']:
+                        text = ""
+                        ocr_text = analyzer_extract_text_from_image(uploaded_file)
+                        if not use_ocr:
+                            st.warning("OCR required for image files. Enable OCR to process.")
                     else:
-                        st.error("Unsupported file type. Please upload a PDF or Word document.")
+                        st.error("Unsupported file type. Please upload a PDF, Word, or image document.")
                         text = None
                         ocr_text = ""
 
@@ -719,8 +856,9 @@ def main():
                     with st.spinner("Processing..."):
                         try:
                             response = st.session_state.analyzer_qa_chain.invoke({"query": question})
+                            answer = response["result"]
                             st.markdown("Answer:")
-                            st.write(response["result"])
+                            st.write(answer)
                             
                             if response.get("source_documents"):
                                 with st.expander("Sources"):
@@ -729,19 +867,123 @@ def main():
                                         content = doc.page_content
                                         st.text(content[:500] + "..." if len(content) > 500 else content)
                                         st.markdown("---")
+                                
+                                # Export options for answers
+                                base_filename = uploaded_file.name.split('.')[0]
+                                filename = f"answer_{base_filename}"
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    st.download_button(
+                                        label="Download as Text",
+                                        data=answer,
+                                        file_name=f"{filename}.txt",
+                                        mime="text/plain",
+                                        use_container_width=True
+                                    )
+                                with col2:
+                                    st.download_button(
+                                        label="Download as Word",
+                                        data=export_to_word(answer, filename),
+                                        file_name=f"{filename}.docx",
+                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        use_container_width=True
+                                    )
+                                with col3:
+                                    st.download_button(
+                                        label="Download as PDF",
+                                        data=export_to_pdf(answer, filename),
+                                        file_name=f"{filename}.pdf",
+                                        mime="application/pdf",
+                                        use_container_width=True
+                                    )
+                                with col4:
+                                    st.download_button(
+                                        label="Download as JSON",
+                                        data=export_to_json(answer, filename),
+                                        file_name=f"{filename}.json",
+                                        mime="application/json",
+                                        use_container_width=True
+                                    )
                         except Exception as e:
                             st.error(f"Error: {str(e)}")
 
         else:
-            st.info("Upload a PDF or Word document to start")
+            st.info("Upload a PDF, Word, or image document to start")
             st.markdown("### Features:")
             st.markdown("""
             - **Text Extraction** - PyPDF2 for PDFs, python-docx for Word documents
-            - **OCR Support** - Tesseract for images and tables (PDF only)
+            - **Image Support** - OCR for JPG, PNG, TIFF files
+            - **OCR Support** - Tesseract for images, tables, and handwritten text (PDF and images)
             - **Smart Q&A** - OpenAI GPT-4o-mini with document analysis
-            - **Data Analysis** - Handles reports, research papers
+            - **Data Analysis** - Handles reports, research papers, and images
+            - **Export Options** - Word, PDF, JSON formats
             - **Fast Processing** - Optimized for performance
             """)
+
+    elif mode == "Spreadsheet Analyzer":
+        st.header("Spreadsheet Analyzer")
+        st.markdown("*Analyze Excel or CSV files with pandas*")
+
+        uploaded_file = st.file_uploader("Choose a spreadsheet", type=["csv", "xlsx"], key="spreadsheet_uploader")
+
+        if uploaded_file is not None:
+            file_extension = uploaded_file.name.split(".")[-1].lower()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("File Name", uploaded_file.name)
+            with col2:
+                st.metric("File Size", f"{uploaded_file.size / 1024:.1f} KB")
+            with col3:
+                st.metric("File Type", file_extension.upper())
+
+            with st.spinner("Analyzing spreadsheet..."):
+                df, analysis = process_spreadsheet(uploaded_file, file_extension)
+
+            if df is not None:
+                st.subheader("Spreadsheet Preview")
+                st.dataframe(df.head())
+
+                st.subheader("Analysis Summary")
+                st.markdown(f"""
+                - **Rows**: {analysis['row_count']}
+                - **Columns**: {analysis['column_count']}
+                - **Column Names**: {', '.join(analysis['columns'])}
+                - **Missing Values**: {analysis['missing_values']}
+                """)
+                if analysis['summary_stats']:
+                    st.markdown("**Summary Statistics**:")
+                    st.dataframe(pd.DataFrame(analysis['summary_stats']))
+
+                # Export options
+                base_filename = uploaded_file.name.split('.')[0]
+                filename = f"analysis_{base_filename}"
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.download_button(
+                        label="Download as Excel",
+                        data=export_to_excel(df, filename),
+                        file_name=f"{filename}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                with col2:
+                    st.download_button(
+                        label="Download as CSV",
+                        data=df.to_csv(index=False).encode('utf-8'),
+                        file_name=f"{filename}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                with col3:
+                    st.download_button(
+                        label="Download Analysis as JSON",
+                        data=export_to_json(json.dumps(analysis, indent=2), filename),
+                        file_name=f"{filename}_analysis.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
+            else:
+                st.error(analysis)  # Error message from process_spreadsheet
 
 if __name__ == "__main__":
     main()
