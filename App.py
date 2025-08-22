@@ -700,14 +700,10 @@ def main():
 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.button("Summary", key="analyzer_summary_btn"):
-                        question = "Provide a summary of this document"
-                        st.session_state.analyzer_current_question = question
-                with col2:
                     if st.button("Data", key="analyzer_data_btn"):
                         question = "What numerical data or statistics are mentioned?"
                         st.session_state.analyzer_current_question = question
-                with col3:
+                with col2:
                     if st.button("Key Points", key="analyzer_keypoints_btn"):
                         question = "What are the main findings or conclusions?"
                         st.session_state.analyzer_current_question = question
