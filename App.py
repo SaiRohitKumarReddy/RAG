@@ -1,40 +1,3 @@
-### Combined App: Document Analyzer Suite
-
-To merge your two apps ("Advanced Text Extractor" and "Smart Document Analyzer") into a single Streamlit app while preserving their similar features (e.g., PDF/DOCX upload, text extraction with OCR, OpenAI integration for summarization/Q&A), I'll outline how the app should work based on your description. Then, I'll provide the complete merged code.
-
-#### How the App Should Work
-1. **Entry Point**: When the user opens the app, it displays a simple selection interface (e.g., a radio button or selectbox) with two options:
-   - **Option 1: Summarize the Document** – This triggers the functionality from your "Smart Document Analyzer" app. It focuses on intelligent text extraction (first page or table of contents, with OCR fallback) and generates a concise AI-powered summary.
-   - **Option 2: Advanced Analyzer** – This triggers the functionality from your "Advanced Text Extractor" app. It performs deeper text extraction (with optional OCR for PDFs), builds a vector store for embeddings, and enables interactive Q&A (including quick buttons for summary, data, and key points).
-
-2. **Workflow After Selection**:
-   - Once an option is selected, the app "opens" that mode by displaying the relevant UI elements (e.g., file uploader, checkboxes, buttons).
-   - The user uploads a PDF or DOCX file.
-   - Processing happens based on the mode:
-     - **Summarize**: Extracts text smartly (prioritizing index/table of contents if available), shows extraction log, and generates a bullet-point AI summary. Allows downloading the summary.
-     - **Advanced Analyzer**: Determines document type, extracts text (with OCR if enabled), creates a vector store, and allows asking questions via text input or quick buttons. Displays answers with sources.
-   - Shared features (e.g., OpenAI API key handling, OCR setup) are handled once at the top to avoid duplication.
-   - The app is efficient: No re-processing unless the file changes. Use session state to persist data within each mode.
-   - If the user switches modes, the app resets the relevant session state to avoid conflicts.
-
-3. **Key Improvements in the Merge**:
-   - **Shared Components**: Imports, lazy-loading functions (e.g., for Tesseract, OpenAI), API key validation, and OCR preprocessing are centralized.
-   - **Conflict Resolution**: Renamed overlapping functions (e.g., `extract_text_from_pdf` from each app becomes `summarize_extract_text_from_pdf` and `analyzer_extract_text_from_pdf`).
-   - **Dependencies**: Combined all required imports. Ensure users install: `streamlit`, `pytesseract`, `PyPDF2`, `pdfplumber`, `docx`, `PIL`, `openai`, `langchain`, `faiss-cpu`, etc.
-   - **Performance**: Limited OCR to necessary pages; batch processing in vector store.
-   - **Error Handling**: Unified warnings/errors with Streamlit notifications.
-   - **UI Polish**: Wide layout, expanders for logs/sources, progress indicators.
-
-4. **Limitations/Notes**:
-   - OCR is PDF-only in Advanced mode (as in your original); optional in both.
-   - OpenAI API key must be in `.streamlit/secrets.toml`.
-   - No internet access in code execution; all local.
-   - Test locally with `streamlit run app.py`.
-
-#### Merged Code
-Here's the complete code for the combined app. Save it as `app.py` and run it.
-
-```python
 import os
 import sys
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
@@ -786,4 +749,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
