@@ -645,9 +645,7 @@ def analyzer_create_vector_store(text_chunks):
 
 def analyzer_create_qa_chain(vector_store, api_key):
     try:
-        ChatOpenAI, RetrievalQA, PromptTemplate = analyzer_get_open
-
-ai()
+        ChatOpenAI, RetrievalQA, PromptTemplate = analyzer_get_openai()
         
         llm = ChatOpenAI(
             openai_api_key=api_key,
@@ -709,7 +707,7 @@ def main():
 
     if mode == "Summarize the Document":
         st.header("Document Summarizer")
-        st.markdown("*AI-powered summarization with smart content detection*")
+        st.markdown("*AI-powered summarization with smart content detection and spreadsheet analysis*")
 
         uploaded_file = st.file_uploader("Choose a file to summarize", type=["pdf", "docx", "jpg", "png", "tiff", "csv", "xlsx"], key="summarize_uploader")
 
