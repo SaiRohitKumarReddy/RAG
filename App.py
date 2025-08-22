@@ -695,7 +695,7 @@ def main():
     # Mode Selection
     mode = st.radio(
         "Select Mode:",
-        ["Summarize the Document", "Advanced Analyzer"],
+        ["Document Summarizer", "Advanced Analyzer"],
         horizontal=True
     )
 
@@ -705,7 +705,7 @@ def main():
         st.info(f"PyTorch: {torch.__version__}")
         st.info(f"CUDA: {torch.cuda.is_available()}")
 
-    if mode == "Summarize the Document":
+    if mode == "Document Summarizer":
         st.header("Document Summarizer")
         st.markdown("*AI-powered summarization with smart content detection and spreadsheet analysis*")
 
