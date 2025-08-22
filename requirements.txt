@@ -13,3 +13,6 @@ pydantic
 pytesseract
 python-docx
 pdfplumber
+pandas
+openpyxl
+reportlab
