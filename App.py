@@ -862,7 +862,7 @@ def main():
                     st.error("Unable to extract readable text. Try a different file.")
 
     elif mode == "Advanced Analyzer":
-        st.header("Advanced Text Analyzer (OCR Based)")
+        st.header("Advanced Analyzer (OCR Based)")
         st.markdown("Upload document or image and ask questions about content, tables, and data")
 
         # Initialize session state for analyzer
