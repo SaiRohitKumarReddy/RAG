@@ -703,7 +703,7 @@ def main():
     with st.expander("System Info"):
         torch = get_torch()
         st.info(f"PyTorch: {torch.__version__}")
-        st.info(f"CUDA: {torch.cuda.is_available()}")
+        
 
     if mode == "Document Summarizer":
         st.header("Document Summarizer")
