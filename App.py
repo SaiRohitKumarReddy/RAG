@@ -1,4 +1,3 @@
-
 import os
 import sys
 import re
@@ -104,6 +103,9 @@ def clean_content(content):
     content = re.sub(r'^\s*[-•*]\s+', '• ', content, flags=re.MULTILINE)
     # Remove headers (#, ##, etc.)
     content = re.sub(r'^#+ \s*', '', content, flags=re.MULTILINE)
+    # Remove OCR artifacts like "I" before numbers (likely misread "₹") and black square boxes (� or ■)
+    content = re.sub(r'I(?=\d)', '', content)  # Remove "I" before digits
+    content = re.sub(r'[\u25A0\ufffd]', '', content)  # Remove box characters
     # Remove extra whitespace and ensure single newlines
     content = re.sub(r'\n\s*\n+', '\n', content).strip()
     return content
