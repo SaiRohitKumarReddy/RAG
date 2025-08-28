@@ -1,17 +1,20 @@
 import os
 import sys
+
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
 os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_SERVING"] = "false"
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # For compatibility
 
 import asyncio
+
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
 import streamlit as st
+
 st.set_page_config(
     page_title="Document Analyzer Suite",
     layout="wide",
@@ -39,9 +42,11 @@ from reportlab.lib.units import inch
 
 # Langchain imports for Advanced Analyzer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 try:
     from langchain_community.vectorstores import FAISS
     import faiss
+
     FAISS_AVAILABLE = True
 except ImportError:
     FAISS_AVAILABLE = False
@@ -56,11 +61,13 @@ if not api_key:
     st.stop()
 client = OpenAI(api_key=api_key)
 
+
 # Shared: Lazy load Torch
 @st.cache_resource
 def get_torch():
     import torch
     return torch
+
 
 # Shared: Lazy load Tesseract
 @st.cache_resource
@@ -74,6 +81,7 @@ def get_tesseract():
         st.error(f"Tesseract initialization failed: {str(e)}. OCR functionality will be disabled.")
         return None, False
 
+
 # Shared: Image Preprocessing for OCR
 def preprocess_image_for_ocr(image):
     image = image.convert("L")  # Grayscale
@@ -81,6 +89,7 @@ def preprocess_image_for_ocr(image):
     enhancer = ImageEnhance.Contrast(image)
     image = enhancer.enhance(2)  # Increase contrast
     return image
+
 
 def extract_text_with_ocr(image):
     pytesseract, available = get_tesseract()
@@ -95,177 +104,6 @@ def extract_text_with_ocr(image):
         st.error(f"OCR Error: {str(e)}")
         return ""
 
-# === OUTPUT FORMATTING FUNCTIONS (ADDED) ===
-def format_financial_data(text):
-    """Extract and format financial data into structured format"""
-    # Patterns for financial data
-    currency_pattern = r'[\$€£¥₹]\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*(?:USD|EUR|GBP|INR|dollars?|euros?|pounds?|rupees?)'
-    percentage_pattern = r'\d+\.?\d*\s*%'
-    financial_keywords = ['revenue', 'profit', 'loss', 'income', 'expense', 'cost', 'budget', 'investment', 'roi', 'margin', 'ebitda', 'cash flow']
-    
-    # Check if text contains financial content
-    has_financial_data = any(keyword in text.lower() for keyword in financial_keywords) or \
-                        re.search(currency_pattern, text, re.IGNORECASE) or \
-                        re.search(percentage_pattern, text)
-    
-    if not has_financial_data:
-        return None, False
-    
-    # Extract financial data
-    financial_items = []
-    lines = text.split('\n')
-    
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-            
-        # Look for currency amounts
-        currency_matches = re.findall(currency_pattern, line, re.IGNORECASE)
-        percentage_matches = re.findall(percentage_pattern, line)
-        
-        if currency_matches or percentage_matches or any(keyword in line.lower() for keyword in financial_keywords):
-            # Clean and format the line
-            clean_line = re.sub(r'[•\-\*]\s*', '', line).strip()
-            if clean_line and len(clean_line) > 5:  # Avoid very short lines
-                financial_items.append(clean_line)
-    
-    if financial_items:
-        # Create a structured table
-        df_data = []
-        for item in financial_items[:10]:  # Limit to 10 items
-            # Try to extract key-value pairs
-            if ':' in item:
-                parts = item.split(':', 1)
-                metric = parts[0].strip()
-                value = parts[1].strip()
-            elif any(keyword in item.lower() for keyword in financial_keywords):
-                # Find the keyword and treat rest as value
-                words = item.split()
-                for i, word in enumerate(words):
-                    if word.lower() in financial_keywords:
-                        metric = ' '.join(words[:i+1])
-                        value = ' '.join(words[i+1:]) if i+1 < len(words) else 'N/A'
-                        break
-                else:
-                    metric = item[:50] + '...' if len(item) > 50 else item
-                    value = 'See details'
-            else:
-                metric = item[:50] + '...' if len(item) > 50 else item
-                value = 'See details'
-            
-            df_data.append({'Metric': metric, 'Value': value})
-        
-        if df_data:
-            df = pd.DataFrame(df_data)
-            return df, True
-    
-    return None, has_financial_data
-
-def format_bullet_points(text):
-    """Convert text to well-formatted bullet points"""
-    if not text:
-        return text
-    
-    # Split into lines and process
-    lines = text.split('\n')
-    formatted_lines = []
-    
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        
-        # Check if line starts with bullet markers
-        if re.match(r'^[\-\*\•]\s*', line):
-            # Already has bullet marker, just clean it up
-            clean_line = re.sub(r'^[\-\*\•]\s*', '• ', line)
-            formatted_lines.append(clean_line)
-        elif re.match(r'^\d+[\.\)]\s*', line):
-            # Numbered list, convert to bullet
-            clean_line = re.sub(r'^\d+[\.\)]\s*', '• ', line)
-            formatted_lines.append(clean_line)
-        elif len(line) > 20 and not line.endswith('.'):
-            # Likely a bullet point without marker
-            formatted_lines.append('• ' + line)
-        else:
-            # Regular text line
-            formatted_lines.append(line)
-    
-    return '\n'.join(formatted_lines)
-
-def display_formatted_response(response_text, title="Analysis Results"):
-    """Display response with proper formatting"""
-    st.markdown(f"### {title}")
-    
-    # Try to format as financial data first
-    financial_df, is_financial = format_financial_data(response_text)
-    
-    if financial_df is not None:
-        st.markdown("**Financial Data Summary:**")
-        st.dataframe(financial_df, use_container_width=True)
-        
-        # Show remaining non-financial content if any
-        non_financial_lines = []
-        lines = response_text.split('\n')
-        financial_keywords = ['revenue', 'profit', 'loss', 'income', 'expense', 'cost', 'budget', 'investment', 'roi', 'margin', 'ebitda', 'cash flow']
-        
-        for line in lines:
-            if line.strip() and not any(keyword in line.lower() for keyword in financial_keywords):
-                currency_pattern = r'[\$€£¥₹]\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*(?:USD|EUR|GBP|INR|dollars?|euros?|pounds?|rupees?)'
-                percentage_pattern = r'\d+\.?\d*\s*%'
-                if not (re.search(currency_pattern, line, re.IGNORECASE) or re.search(percentage_pattern, line)):
-                    non_financial_lines.append(line.strip())
-        
-        if non_financial_lines:
-            st.markdown("**Additional Information:**")
-            additional_text = '\n'.join(non_financial_lines)
-            formatted_text = format_bullet_points(additional_text)
-            st.markdown(formatted_text)
-    
-    elif is_financial:
-        # Has financial content but couldn't create table
-        st.markdown("**Financial Analysis:**")
-        formatted_text = format_bullet_points(response_text)
-        st.markdown(formatted_text)
-    else:
-        # Regular content formatting
-        # Check if it looks like bullet points
-        if '•' in response_text or re.search(r'^[\-\*]\s', response_text, re.MULTILINE) or re.search(r'^\d+[\.\)]\s', response_text, re.MULTILINE):
-            formatted_text = format_bullet_points(response_text)
-            st.markdown(formatted_text)
-        else:
-            # Regular paragraph text
-            paragraphs = response_text.split('\n\n')
-            for para in paragraphs:
-                if para.strip():
-                    st.markdown(para.strip())
-
-def create_enhanced_summary_prompt(text, extraction_method):
-    """Create enhanced prompts for better structured output"""
-    if extraction_method == "index_pages":
-        return """You are a document analyst. Based on the table of contents provided, create a comprehensive summary.
-
-Format your response as follows:
-1. Start with a brief overview paragraph
-2. List main sections/topics as bullet points using • 
-3. If any financial data is mentioned, clearly highlight it
-4. End with the document's apparent purpose/audience
-
-Be specific and professional. Each bullet point should be substantial (15-25 words).
-
-Table of Contents/Index:"""
-    else:
-        return """You are a document analyst. Create a clear, well-structured summary of the following content.
-
-Format guidelines:
-- If the content contains financial data (numbers, percentages, monetary values), present key financial metrics clearly
-- Use bullet points (•) for main findings
-- Keep each point concise but informative (15-25 words)
-- Group related information logically
-- Highlight any key statistics or important figures
-
-Content to analyze:"""
 
 # --- Excel/CSV Processing ---
 def process_spreadsheet(file, file_type):
@@ -277,10 +115,10 @@ def process_spreadsheet(file, file_type):
             df = pd.read_excel(file, engine='openpyxl', skiprows=1)
         else:
             return None, "Unsupported spreadsheet format"
-        
+
         # Clean column names (remove unnamed if any)
         df.columns = [col if not str(col).startswith('Unnamed') else f'Column_{i}' for i, col in enumerate(df.columns)]
-        
+
         # Basic analysis
         analysis = {
             'row_count': len(df),
@@ -294,6 +132,7 @@ def process_spreadsheet(file, file_type):
     except Exception as e:
         return None, f"Error processing spreadsheet: {str(e)}"
 
+
 # --- Export Functions ---
 def export_to_word(content, filename):
     doc = docx.Document()
@@ -303,6 +142,7 @@ def export_to_word(content, filename):
     doc.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
+
 
 def export_to_pdf(content, filename):
     buffer = io.BytesIO()
@@ -317,11 +157,11 @@ def export_to_pdf(content, filename):
     leading = font_size * 1.2  # Line spacing
 
     c.setFont("Helvetica", font_size)
-    
+
     # Start text object
     textobject = c.beginText(left_margin, height - top_margin)
     y = height - top_margin
-    
+
     # Split content into lines and wrap long ones
     lines = content.split('\n')
     for line in lines:
@@ -335,7 +175,7 @@ def export_to_pdf(content, filename):
                 textobject.textLine(wrapped_line)
                 y -= leading
             line = line[len(wrapped_line):].lstrip()  # Remaining part
-            
+
             if y <= bottom_margin:
                 # Draw current text and start new page
                 c.drawText(textobject)
@@ -351,15 +191,18 @@ def export_to_pdf(content, filename):
     buffer.seek(0)
     return buffer.getvalue()
 
+
 def export_to_json(content, filename):
     data = {'filename': filename, 'content': content}
     return json.dumps(data, indent=2).encode('utf-8')
+
 
 def export_to_excel(df, filename):
     buffer = io.BytesIO()
     df.to_excel(buffer, index=False, engine='openpyxl')
     buffer.seek(0)
     return buffer.getvalue()
+
 
 # --- Summarizer Mode Functions ---
 def summarize_is_text_substantial(text, min_words=30):
@@ -368,6 +211,7 @@ def summarize_is_text_substantial(text, min_words=30):
     words = re.findall(r'\b\w+\b', text.lower())
     meaningful_words = [w for w in words if len(w) > 2]
     return len(meaningful_words) >= min_words
+
 
 def summarize_find_index_pages(file, file_type):
     index_keywords = [
@@ -411,6 +255,7 @@ def summarize_find_index_pages(file, file_type):
         st.warning(f"Error while searching for index pages: {str(e)}")
     return list(set(potential_pages))
 
+
 def summarize_extract_text_from_pdf_pages(file, page_numbers):
     combined_text = ""
     try:
@@ -436,6 +281,7 @@ def summarize_extract_text_from_pdf_pages(file, page_numbers):
         st.warning(f"Error extracting text from multiple pages: {str(e)}")
     return combined_text.strip()
 
+
 def summarize_extract_text_from_pdf(file):
     text = ""
     try:
@@ -459,6 +305,7 @@ def summarize_extract_text_from_pdf(file):
             st.warning(f"OCR extraction failed: {str(e)}")
     return text.strip()
 
+
 def summarize_extract_text_from_docx(file):
     try:
         file.seek(0)
@@ -469,6 +316,7 @@ def summarize_extract_text_from_docx(file):
         st.error(f"DOCX extraction failed: {str(e)}")
         return ""
 
+
 def summarize_extract_text_from_image(file):
     try:
         file.seek(0)
@@ -478,6 +326,7 @@ def summarize_extract_text_from_image(file):
     except Exception as e:
         st.error(f"Image extraction failed: {str(e)}")
         return ""
+
 
 def summarize_extract_text_smart(file, file_type):
     extraction_log = []
@@ -490,7 +339,7 @@ def summarize_extract_text_smart(file, file_type):
         first_page_text = summarize_extract_text_from_image(file)
     else:
         return "", ["Unsupported file type"], "unsupported"
-    
+
     if summarize_is_text_substantial(first_page_text):
         extraction_log.append("First page contains substantial content")
         return first_page_text, extraction_log, "first_page"
@@ -519,40 +368,43 @@ def summarize_extract_text_smart(file, file_type):
     extraction_log.append("Using first page content as fallback")
     return first_page_text, extraction_log, "first_page_fallback"
 
+
 def summarize_text_with_openai(text, extraction_method):
     try:
-        enhanced_prompt = create_enhanced_summary_prompt(text, extraction_method)
-        
+        if extraction_method == "index_pages":
+            system_prompt = """You are a helpful assistant that creates clear, concise summaries. 
+            The text provided appears to be from a table of contents or index section. 
+            Create a summary that captures the main topics and structure of the document based on this index information.
+            Always format your response with each bullet point on a separate line using the format: - Bullet point text."""
+            user_prompt = f"""Please analyze this table of contents/index and create a 4-6 bullet point summary:
+            {text}"""
+        else:
+            system_prompt = """You are a helpful assistant that creates clear, concise summaries. 
+            Always format your response with each bullet point on a separate line using the format: - Bullet point text."""
+            user_prompt = f"""Please summarize the following text in 3-5 bullet points:
+            {text}"""
+
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": enhanced_prompt},
-                {"role": "user", "content": text}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
-            max_tokens=600,
+            max_tokens=500,
             temperature=0.3
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         return f"API Error: {str(e)}"
 
+
 # --- Spreadsheet AI Analysis Function ---
 def analyze_spreadsheet_with_openai(df):
     try:
         # Convert DF to string for prompt
         df_str = df.to_csv(index=False)
-        system_prompt = """You are a financial and data analyst. Analyze the spreadsheet data and provide structured insights.
-
-Format your response as follows:
-1. If financial data is present, highlight key financial metrics first
-2. Use bullet points (•) for main findings
-3. Include specific numbers and percentages where relevant
-4. Group related insights together
-5. End with actionable recommendations if applicable
-
-Be specific and use actual data from the spreadsheet."""
-        
-        user_prompt = f"""Analyze this spreadsheet data and provide 4-6 key insights with specific numbers:
+        system_prompt = """You are a data analyst. Provide insights, key trends, and summaries from the spreadsheet data."""
+        user_prompt = f"""Analyze this spreadsheet data and provide 3-5 key insights:
         {df_str}"""
 
         response = client.chat.completions.create(
@@ -561,12 +413,13 @@ Be specific and use actual data from the spreadsheet."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=600,
+            max_tokens=500,
             temperature=0.3
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         return f"API Error: {str(e)}"
+
 
 # --- Analyzer Mode Functions ---
 @st.cache_resource
@@ -574,20 +427,24 @@ def analyzer_get_pdf_reader():
     from PyPDF2 import PdfReader
     return PdfReader
 
+
 @st.cache_resource
 def analyzer_get_docx_reader():
     from docx import Document
     return Document
+
 
 @st.cache_resource
 def analyzer_get_text_splitter():
     from langchain.text_splitter import RecursiveCharacterTextSplitter
     return RecursiveCharacterTextSplitter
 
+
 @st.cache_resource
 def analyzer_get_embeddings():
     from langchain_openai import OpenAIEmbeddings
     return OpenAIEmbeddings
+
 
 @st.cache_resource
 def analyzer_get_openai():
@@ -595,6 +452,7 @@ def analyzer_get_openai():
     from langchain.chains import RetrievalQA
     from langchain.prompts import PromptTemplate
     return ChatOpenAI, RetrievalQA, PromptTemplate
+
 
 @st.cache_resource
 def analyzer_get_fitz():
@@ -604,41 +462,42 @@ def analyzer_get_fitz():
     except ImportError:
         return None, False
 
+
 def analyzer_determine_document_type(file, file_type, use_ocr):
     if file_type == 'docx':
         return "Word Document"
     elif file_type in ['jpg', 'png', 'tiff']:
         return "Image Document (OCR required)"
-    
+
     try:
         PdfReader = analyzer_get_pdf_reader()
         file.seek(0)
         pdf_reader = PdfReader(file)
         fitz, fitz_available = analyzer_get_fitz()
-        
+
         file.seek(0)
         pdf_bytes = file.read()
         pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
         has_images = False
         image_count = 0
-        
+
         for page_num in range(min(len(pdf_document), 3)):
             page = pdf_document.load_page(page_num)
             images = page.get_images()
             if images:
                 has_images = True
                 image_count += len(images)
-        
+
         pdf_document.close()
-        
+
         text = ""
         for page in pdf_reader.pages:
             page_text = page.extract_text()
             if page_text and page_text.strip():
                 text += page_text
-        
+
         text_length = len(text.strip())
-        
+
         if has_images and image_count > 5:
             return "Infographic/Visual PDF"
         elif has_images and text_length < 200:
@@ -651,10 +510,11 @@ def analyzer_determine_document_type(file, file_type, use_ocr):
             return "Sparse Text PDF"
         else:
             return "Image-only PDF (OCR required)"
-            
+
     except Exception as e:
         st.warning(f"Could not determine document type: {str(e)}")
         return "Unknown"
+
 
 def analyzer_extract_text_from_pdf(pdf_file):
     try:
@@ -671,6 +531,7 @@ def analyzer_extract_text_from_pdf(pdf_file):
         st.error(f"Error reading PDF: {str(e)}")
         return None
 
+
 def analyzer_extract_text_from_docx(docx_file):
     try:
         Document = analyzer_get_docx_reader()
@@ -686,6 +547,7 @@ def analyzer_extract_text_from_docx(docx_file):
         st.error(f"Error reading Word document: {str(e)}")
         return None
 
+
 def analyzer_extract_text_from_image(image_file):
     try:
         image_file.seek(0)
@@ -696,10 +558,11 @@ def analyzer_extract_text_from_image(image_file):
         st.error(f"Image extraction failed: {str(e)}")
         return ""
 
+
 def analyzer_extract_images_and_ocr(pdf_file):
     pytesseract, tesseract_available = get_tesseract()
     fitz, fitz_available = analyzer_get_fitz()
-    
+
     if not fitz_available:
         st.warning("PDF image processing (PyMuPDF) not available. Install with: pip install pymupdf")
         return ""
@@ -738,28 +601,30 @@ def analyzer_extract_images_and_ocr(pdf_file):
         st.error(f"OCR processing failed: {str(e)}. Continuing without OCR.")
         return ""
 
+
 @st.cache_resource
 def analyzer_create_embeddings():
     try:
         torch = get_torch()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            
+
         OpenAIEmbeddings = analyzer_get_embeddings()
         embeddings = OpenAIEmbeddings(
             model="text-embedding-3-small",
             openai_api_key=api_key
         )
-        
+
         test_embedding = embeddings.embed_query("test")
         if test_embedding and len(test_embedding) > 0:
             return embeddings
         else:
             raise ValueError("Empty embedding")
-            
+
     except Exception as e:
         st.error(f"Embedding creation failed: {str(e)}")
         return None
+
 
 def analyzer_create_vector_store(text_chunks):
     try:
@@ -768,11 +633,11 @@ def analyzer_create_vector_store(text_chunks):
             return None
 
         valid_chunks = [
-            ' '.join(chunk.strip().split()) 
-            for chunk in text_chunks 
+            ' '.join(chunk.strip().split())
+            for chunk in text_chunks
             if chunk and isinstance(chunk, str) and len(chunk.strip()) > 10
         ]
-        
+
         if not valid_chunks:
             st.error("No valid text chunks")
             return None
@@ -781,10 +646,10 @@ def analyzer_create_vector_store(text_chunks):
         embeddings = analyzer_create_embeddings()
         if not embeddings:
             return None
-            
+
         batch_size = 20
         vector_store = None
-        
+
         progress_bar = st.progress(0)
         for i in range(0, len(valid_chunks), batch_size):
             batch = valid_chunks[i:i + batch_size]
@@ -794,30 +659,31 @@ def analyzer_create_vector_store(text_chunks):
                 else:
                     batch_vs = FAISS.from_texts(batch, embedding=embeddings)
                     vector_store.merge_from(batch_vs)
-                
+
                 progress = min((i + batch_size) / len(valid_chunks), 1.0)
                 progress_bar.progress(progress)
             except Exception as e:
-                st.warning(f"Batch {i//batch_size + 1} failed: {str(e)}")
+                st.warning(f"Batch {i // batch_size + 1} failed: {str(e)}")
                 continue
 
         progress_bar.empty()
-        
+
         if vector_store:
             st.success("Vector store created")
             return vector_store
         else:
             st.error("Vector store creation failed")
             return None
-            
+
     except Exception as e:
         st.error(f"Vector store error: {str(e)}")
         return None
 
+
 def analyzer_create_qa_chain(vector_store, api_key):
     try:
         ChatOpenAI, RetrievalQA, PromptTemplate = analyzer_get_openai()
-        
+
         llm = ChatOpenAI(
             openai_api_key=api_key,
             model_name="gpt-4o-mini",
@@ -826,19 +692,17 @@ def analyzer_create_qa_chain(vector_store, api_key):
         )
 
         prompt_template = """
-You are a document analyst. Answer based on the provided context with proper formatting.
+You are a document analyst. Answer based on the provided context.
 
 Context: {context}
 
 Question: {question}
 
 Instructions:
-- If the answer contains financial data (numbers, percentages, monetary values), structure it clearly
-- Use bullet points (•) for listing multiple items or findings
-- Include specific numbers and data points when available
-- If information is incomplete, state what you found and what's missing
+- Provide detailed answers when context supports it
+- For numerical data, present it clearly
+- If information is incomplete, say what you found
 - If no relevant info exists, state "Information not found in document"
-- Keep responses well-organized and professional
 
 Answer:
 """
@@ -860,6 +724,7 @@ Answer:
         st.error(f"QA chain error: {str(e)}")
         return None
 
+
 # --- Main App Logic ---
 def main():
     st.title("Document Analyzer Suite")
@@ -876,13 +741,14 @@ def main():
     with st.expander("System Info"):
         torch = get_torch()
         st.info(f"PyTorch: {torch.__version__}")
-        
 
     if mode == "Document Summarizer":
         st.header("Document Summarizer")
         st.markdown("*AI-powered summarization with smart content detection and spreadsheet analysis*")
 
-        uploaded_file = st.file_uploader("Choose a file to summarize", type=["pdf", "docx", "jpg", "png", "tiff", "csv", "xlsx"], key="summarize_uploader")
+        uploaded_file = st.file_uploader("Choose a file to summarize",
+                                         type=["pdf", "docx", "jpg", "png", "tiff", "csv", "xlsx"],
+                                         key="summarize_uploader")
 
         if uploaded_file is not None:
             file_extension = uploaded_file.name.split(".")[-1].lower()
@@ -917,7 +783,8 @@ def main():
                     if st.button("Generate AI Insights", type="primary"):
                         with st.spinner("Generating AI insights..."):
                             ai_insights = analyze_spreadsheet_with_openai(df)
-                        display_formatted_response(ai_insights, "AI-Generated Insights")
+                        st.subheader("AI-Generated Insights")
+                        st.markdown(ai_insights)
 
                     # Export options
                     base_filename = uploaded_file.name.split('.')[0]
@@ -951,7 +818,8 @@ def main():
                     st.error(analysis)  # Error message from process_spreadsheet
             else:
                 with st.spinner("Analyzing document..."):
-                    extracted_text, extraction_log, extraction_method = summarize_extract_text_smart(uploaded_file, file_extension)
+                    extracted_text, extraction_log, extraction_method = summarize_extract_text_smart(uploaded_file,
+                                                                                                     file_extension)
 
                 with st.expander("Extraction Process Log", expanded=False):
                     for log_entry in extraction_log:
@@ -979,8 +847,16 @@ def main():
                             with st.spinner("Generating AI summary..."):
                                 summary = summarize_text_with_openai(extracted_text, extraction_method)
 
+                            st.subheader("AI-Generated Summary")
                             if summary and not summary.startswith("API Error"):
-                                display_formatted_response(summary, "AI-Generated Summary")
+                                bullet_markers = ['•', '-', '*']
+                                formatted_summary = summary
+                                for marker in bullet_markers:
+                                    formatted_summary = formatted_summary.replace(f'{marker} ', f'\n{marker} ')
+                                lines = [line.strip() for line in formatted_summary.split('\n') if line.strip()]
+                                formatted_summary = '\n'.join(
+                                    [f"{line}" for line in lines if line.startswith(tuple(bullet_markers))])
+                                st.markdown(formatted_summary)
                             else:
                                 st.error(summary)
 
@@ -989,7 +865,7 @@ def main():
                                 base_filename = uploaded_file.name.split('.')[0]
                                 filename = f"summary_{base_filename}{method_suffix}"
                                 download_content = f"Document: {uploaded_file.name}\nContent Source: {method_info.get(extraction_method, 'Unknown')}\nSUMMARY:\n" + summary
-                                
+
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
                                     st.download_button(
@@ -1041,12 +917,12 @@ def main():
             st.session_state.analyzer_document_type = None
 
         _, tesseract_available = get_tesseract()
-        use_ocr = st.checkbox("Enable OCR (PDF and Images)", value=tesseract_available, 
+        use_ocr = st.checkbox("Enable OCR (PDF and Images)", value=tesseract_available,
                               disabled=not tesseract_available, key="analyzer_ocr")
 
-        uploaded_file = st.file_uploader("Choose PDF, Word, or Image document", 
-                                       type=["pdf", "docx", "jpg", "png", "tiff"], 
-                                       key="analyzer_uploader")
+        uploaded_file = st.file_uploader("Choose PDF, Word, or Image document",
+                                         type=["pdf", "docx", "jpg", "png", "tiff"],
+                                         key="analyzer_uploader")
 
         if uploaded_file:
             file_extension = uploaded_file.name.split(".")[-1].lower()
@@ -1058,7 +934,8 @@ def main():
                 st.session_state.analyzer_processed_file = uploaded_file.name
 
                 # Determine and store document type
-                st.session_state.analyzer_document_type = analyzer_determine_document_type(uploaded_file, file_extension, use_ocr)
+                st.session_state.analyzer_document_type = analyzer_determine_document_type(uploaded_file,
+                                                                                           file_extension, use_ocr)
 
                 with st.spinner("Extracting text..."):
                     if file_extension == 'pdf':
@@ -1068,7 +945,8 @@ def main():
                             with st.spinner("Running OCR..."):
                                 ocr_text = analyzer_extract_images_and_ocr(uploaded_file)
                         elif use_ocr and not tesseract_available:
-                            st.warning("OCR is not available due to missing Tesseract dependencies. Continuing with text extraction only.")
+                            st.warning(
+                                "OCR is not available due to missing Tesseract dependencies. Continuing with text extraction only.")
                     elif file_extension == 'docx':
                         text = analyzer_extract_text_from_docx(uploaded_file)
                         ocr_text = ""  # OCR not applicable for Word documents
@@ -1140,8 +1018,9 @@ def main():
                         try:
                             response = st.session_state.analyzer_qa_chain.invoke({"query": question})
                             answer = response["result"]
-                            display_formatted_response(answer, "Analysis Results")
-                            
+                            st.markdown("Answer:")
+                            st.write(answer)
+
                             if response.get("source_documents"):
                                 with st.expander("Sources"):
                                     for i, doc in enumerate(response["source_documents"][:3]):
@@ -1149,7 +1028,7 @@ def main():
                                         content = doc.page_content
                                         st.text(content[:500] + "..." if len(content) > 500 else content)
                                         st.markdown("---")
-                                
+
                                 # Export options for answers
                                 base_filename = uploaded_file.name.split('.')[0]
                                 filename = f"answer_{base_filename}"
@@ -1201,6 +1080,7 @@ def main():
             - **Export Options** - Word, PDF, JSON formats
             - **Fast Processing** - Optimized for performance
             """)
+
 
 if __name__ == "__main__":
     main()
