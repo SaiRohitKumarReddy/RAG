@@ -1,29 +1,9 @@
+
 import os
 import sys
-
-os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
-os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
-os.environ["STREAMLIT_SERVER_ENABLE_STATIC_SERVING"] = "false"
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # For compatibility
-
-import asyncio
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
-    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-
-import streamlit as st
-
-st.set_page_config(
-    page_title="Document Analyzer Suite",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-import tempfile
+import re
 import io
-import traceback
+import asyncio
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageEnhance, ImageFilter
@@ -31,7 +11,6 @@ from docx import Document
 import PyPDF2
 import pdfplumber
 import pytesseract
-import re
 from openai import OpenAI
 import fitz  # PyMuPDF
 import json
@@ -39,20 +18,35 @@ import docx
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
-
-# Langchain imports for Advanced Analyzer
+import streamlit as st
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 try:
     from langchain_community.vectorstores import FAISS
     import faiss
-
     FAISS_AVAILABLE = True
 except ImportError:
     FAISS_AVAILABLE = False
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+
+# Streamlit configuration
+os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
+os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
+os.environ["STREAMLIT_SERVER_ENABLE_STATIC_SERVING"] = "false"
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # For compatibility
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+elif hasattr(asyncio, 'DefaultEventLoopPolicy'):
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
+st.set_page_config(
+    page_title="Document Analyzer Suite",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # Shared: OpenAI Client and API Key
 api_key = st.secrets.get("OPENAI_API_KEY")
@@ -61,13 +55,11 @@ if not api_key:
     st.stop()
 client = OpenAI(api_key=api_key)
 
-
 # Shared: Lazy load Torch
 @st.cache_resource
 def get_torch():
     import torch
     return torch
-
 
 # Shared: Lazy load Tesseract
 @st.cache_resource
@@ -81,7 +73,6 @@ def get_tesseract():
         st.error(f"Tesseract initialization failed: {str(e)}. OCR functionality will be disabled.")
         return None, False
 
-
 # Shared: Image Preprocessing for OCR
 def preprocess_image_for_ocr(image):
     image = image.convert("L")  # Grayscale
@@ -89,7 +80,6 @@ def preprocess_image_for_ocr(image):
     enhancer = ImageEnhance.Contrast(image)
     image = enhancer.enhance(2)  # Increase contrast
     return image
-
 
 def extract_text_with_ocr(image):
     pytesseract, available = get_tesseract()
@@ -104,6 +94,19 @@ def extract_text_with_ocr(image):
         st.error(f"OCR Error: {str(e)}")
         return ""
 
+# --- Clean Content for Export ---
+def clean_content(content):
+    """Remove markdown symbols (e.g., **, *, •, #) for clean export."""
+    # Remove bold/italic markdown (**text** or *text*)
+    content = re.sub(r'\*\*(.*?)\*\*', r'\1', content)
+    content = re.sub(r'\*(.*?)\*', r'\1', content)
+    # Replace bullet markers (*, •, -) with a standard bullet (•) for consistency
+    content = re.sub(r'^\s*[-•*]\s+', '• ', content, flags=re.MULTILINE)
+    # Remove headers (#, ##, etc.)
+    content = re.sub(r'^#+ \s*', '', content, flags=re.MULTILINE)
+    # Remove extra whitespace and ensure single newlines
+    content = re.sub(r'\n\s*\n+', '\n', content).strip()
+    return content
 
 # --- Excel/CSV Processing ---
 def process_spreadsheet(file, file_type):
@@ -111,15 +114,12 @@ def process_spreadsheet(file, file_type):
         if file_type == 'csv':
             df = pd.read_csv(file)
         elif file_type == 'xlsx':
-            # Skip the first row if it's a title, and use the second row as headers
             df = pd.read_excel(file, engine='openpyxl', skiprows=1)
         else:
             return None, "Unsupported spreadsheet format"
 
-        # Clean column names (remove unnamed if any)
         df.columns = [col if not str(col).startswith('Unnamed') else f'Column_{i}' for i, col in enumerate(df.columns)]
 
-        # Basic analysis
         analysis = {
             'row_count': len(df),
             'column_count': len(df.columns),
@@ -132,77 +132,78 @@ def process_spreadsheet(file, file_type):
     except Exception as e:
         return None, f"Error processing spreadsheet: {str(e)}"
 
-
 # --- Export Functions ---
 def export_to_word(content, filename):
-    doc = docx.Document()
+    doc = Document()
     doc.add_heading(filename, 0)
-    doc.add_paragraph(content)
+    cleaned_content = clean_content(content)
+    for line in cleaned_content.split('\n'):
+        if line.strip():
+            doc.add_paragraph(line)
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
 
-
 def export_to_pdf(content, filename):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter  # 612 x 792 points
+    width, height = letter
     left_margin = 1 * inch
     right_margin = 1 * inch
     top_margin = 1 * inch
     bottom_margin = 1 * inch
     max_line_width = width - left_margin - right_margin
     font_size = 12
-    leading = font_size * 1.2  # Line spacing
+    leading = font_size * 1.2
 
     c.setFont("Helvetica", font_size)
-
-    # Start text object
     textobject = c.beginText(left_margin, height - top_margin)
     y = height - top_margin
 
-    # Split content into lines and wrap long ones
-    lines = content.split('\n')
+    cleaned_content = clean_content(content)
+    lines = cleaned_content.split('\n')
     for line in lines:
-        # Wrap long lines
-        while len(line) > 0:
-            # Find max characters that fit in width (approximate, or use exact width)
+        x_offset = 0
+        stripped_line = line.lstrip()
+        if stripped_line.startswith('•'):
+            x_offset = 0.25 * inch
+            wrapped_line = stripped_line
+        else:
             wrapped_line = line
-            while c.stringWidth(wrapped_line, "Helvetica", font_size) > max_line_width and len(wrapped_line) > 1:
-                wrapped_line = wrapped_line[:-1]
-            if wrapped_line:
-                textobject.textLine(wrapped_line)
+
+        while len(wrapped_line) > 0:
+            temp_line = wrapped_line
+            while c.stringWidth(temp_line, "Helvetica", font_size) > max_line_width - x_offset and len(temp_line) > 1:
+                temp_line = temp_line[:-1]
+            if temp_line:
+                textobject.setTextOrigin(left_margin + x_offset, y)
+                textobject.textLine(temp_line)
                 y -= leading
-            line = line[len(wrapped_line):].lstrip()  # Remaining part
+            wrapped_line = wrapped_line[len(temp_line):].lstrip()
 
             if y <= bottom_margin:
-                # Draw current text and start new page
                 c.drawText(textobject)
                 c.showPage()
                 c.setFont("Helvetica", font_size)
                 textobject = c.beginText(left_margin, height - top_margin)
                 y = height - top_margin
 
-    # Draw any remaining text
     c.drawText(textobject)
     c.showPage()
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
 
-
 def export_to_json(content, filename):
     data = {'filename': filename, 'content': content}
     return json.dumps(data, indent=2).encode('utf-8')
-
 
 def export_to_excel(df, filename):
     buffer = io.BytesIO()
     df.to_excel(buffer, index=False, engine='openpyxl')
     buffer.seek(0)
     return buffer.getvalue()
-
 
 # --- Summarizer Mode Functions ---
 def summarize_is_text_substantial(text, min_words=30):
@@ -211,7 +212,6 @@ def summarize_is_text_substantial(text, min_words=30):
     words = re.findall(r'\b\w+\b', text.lower())
     meaningful_words = [w for w in words if len(w) > 2]
     return len(meaningful_words) >= min_words
-
 
 def summarize_find_index_pages(file, file_type):
     index_keywords = [
@@ -255,7 +255,6 @@ def summarize_find_index_pages(file, file_type):
         st.warning(f"Error while searching for index pages: {str(e)}")
     return list(set(potential_pages))
 
-
 def summarize_extract_text_from_pdf_pages(file, page_numbers):
     combined_text = ""
     try:
@@ -281,7 +280,6 @@ def summarize_extract_text_from_pdf_pages(file, page_numbers):
         st.warning(f"Error extracting text from multiple pages: {str(e)}")
     return combined_text.strip()
 
-
 def summarize_extract_text_from_pdf(file):
     text = ""
     try:
@@ -305,7 +303,6 @@ def summarize_extract_text_from_pdf(file):
             st.warning(f"OCR extraction failed: {str(e)}")
     return text.strip()
 
-
 def summarize_extract_text_from_docx(file):
     try:
         file.seek(0)
@@ -316,7 +313,6 @@ def summarize_extract_text_from_docx(file):
         st.error(f"DOCX extraction failed: {str(e)}")
         return ""
 
-
 def summarize_extract_text_from_image(file):
     try:
         file.seek(0)
@@ -326,7 +322,6 @@ def summarize_extract_text_from_image(file):
     except Exception as e:
         st.error(f"Image extraction failed: {str(e)}")
         return ""
-
 
 def summarize_extract_text_smart(file, file_type):
     extraction_log = []
@@ -368,7 +363,6 @@ def summarize_extract_text_smart(file, file_type):
     extraction_log.append("Using first page content as fallback")
     return first_page_text, extraction_log, "first_page_fallback"
 
-
 def summarize_text_with_openai(text, extraction_method):
     try:
         if extraction_method == "index_pages":
@@ -397,14 +391,13 @@ def summarize_text_with_openai(text, extraction_method):
     except Exception as e:
         return f"API Error: {str(e)}"
 
-
 # --- Spreadsheet AI Analysis Function ---
 def analyze_spreadsheet_with_openai(df):
     try:
-        # Convert DF to string for prompt
         df_str = df.to_csv(index=False)
-        system_prompt = """You are a data analyst. Provide insights, key trends, and summaries from the spreadsheet data."""
-        user_prompt = f"""Analyze this spreadsheet data and provide 3-5 key insights:
+        system_prompt = """You are a data analyst. Provide insights, key trends, and summaries from the spreadsheet data.
+        Format your response with clear bullet points, and use tables or formatted text for any numerical data."""
+        user_prompt = f"""Analyze this spreadsheet data and provide 3-5 key insights, including any financial data highlights:
         {df_str}"""
 
         response = client.chat.completions.create(
@@ -420,31 +413,26 @@ def analyze_spreadsheet_with_openai(df):
     except Exception as e:
         return f"API Error: {str(e)}"
 
-
 # --- Analyzer Mode Functions ---
 @st.cache_resource
 def analyzer_get_pdf_reader():
     from PyPDF2 import PdfReader
     return PdfReader
 
-
 @st.cache_resource
 def analyzer_get_docx_reader():
     from docx import Document
     return Document
-
 
 @st.cache_resource
 def analyzer_get_text_splitter():
     from langchain.text_splitter import RecursiveCharacterTextSplitter
     return RecursiveCharacterTextSplitter
 
-
 @st.cache_resource
 def analyzer_get_embeddings():
     from langchain_openai import OpenAIEmbeddings
     return OpenAIEmbeddings
-
 
 @st.cache_resource
 def analyzer_get_openai():
@@ -453,7 +441,6 @@ def analyzer_get_openai():
     from langchain.prompts import PromptTemplate
     return ChatOpenAI, RetrievalQA, PromptTemplate
 
-
 @st.cache_resource
 def analyzer_get_fitz():
     try:
@@ -461,7 +448,6 @@ def analyzer_get_fitz():
         return fitz, True
     except ImportError:
         return None, False
-
 
 def analyzer_determine_document_type(file, file_type, use_ocr):
     if file_type == 'docx':
@@ -510,11 +496,9 @@ def analyzer_determine_document_type(file, file_type, use_ocr):
             return "Sparse Text PDF"
         else:
             return "Image-only PDF (OCR required)"
-
     except Exception as e:
         st.warning(f"Could not determine document type: {str(e)}")
         return "Unknown"
-
 
 def analyzer_extract_text_from_pdf(pdf_file):
     try:
@@ -531,7 +515,6 @@ def analyzer_extract_text_from_pdf(pdf_file):
         st.error(f"Error reading PDF: {str(e)}")
         return None
 
-
 def analyzer_extract_text_from_docx(docx_file):
     try:
         Document = analyzer_get_docx_reader()
@@ -547,7 +530,6 @@ def analyzer_extract_text_from_docx(docx_file):
         st.error(f"Error reading Word document: {str(e)}")
         return None
 
-
 def analyzer_extract_text_from_image(image_file):
     try:
         image_file.seek(0)
@@ -557,7 +539,6 @@ def analyzer_extract_text_from_image(image_file):
     except Exception as e:
         st.error(f"Image extraction failed: {str(e)}")
         return ""
-
 
 def analyzer_extract_images_and_ocr(pdf_file):
     pytesseract, tesseract_available = get_tesseract()
@@ -586,7 +567,7 @@ def analyzer_extract_images_and_ocr(pdf_file):
                 image = Image.open(io.BytesIO(img_data))
 
                 page_ocr_text = f"\n--- OCR Page {page_num + 1} ---\n"
-                config = "--psm 6"  # Assume a single uniform block of text for handwriting
+                config = "--psm 6"
                 page_ocr_text += pytesseract.image_to_string(image, lang='eng', config=config)
                 ocr_text += page_ocr_text + "\n"
             except Exception as e:
@@ -600,7 +581,6 @@ def analyzer_extract_images_and_ocr(pdf_file):
     except Exception as e:
         st.error(f"OCR processing failed: {str(e)}. Continuing without OCR.")
         return ""
-
 
 @st.cache_resource
 def analyzer_create_embeddings():
@@ -620,11 +600,9 @@ def analyzer_create_embeddings():
             return embeddings
         else:
             raise ValueError("Empty embedding")
-
     except Exception as e:
         st.error(f"Embedding creation failed: {str(e)}")
         return None
-
 
 def analyzer_create_vector_store(text_chunks):
     try:
@@ -659,7 +637,6 @@ def analyzer_create_vector_store(text_chunks):
                 else:
                     batch_vs = FAISS.from_texts(batch, embedding=embeddings)
                     vector_store.merge_from(batch_vs)
-
                 progress = min((i + batch_size) / len(valid_chunks), 1.0)
                 progress_bar.progress(progress)
             except Exception as e:
@@ -674,11 +651,9 @@ def analyzer_create_vector_store(text_chunks):
         else:
             st.error("Vector store creation failed")
             return None
-
     except Exception as e:
         st.error(f"Vector store error: {str(e)}")
         return None
-
 
 def analyzer_create_qa_chain(vector_store, api_key):
     try:
@@ -706,7 +681,6 @@ Instructions:
 
 Answer:
 """
-
         prompt = PromptTemplate(
             template=prompt_template,
             input_variables=["context", "question"]
@@ -724,20 +698,17 @@ Answer:
         st.error(f"QA chain error: {str(e)}")
         return None
 
-
 # --- Main App Logic ---
 def main():
     st.title("Document Analyzer Suite")
     st.markdown("Choose a mode to analyze your PDF, Word, image, or spreadsheet.")
 
-    # Mode Selection
     mode = st.radio(
         "Select Mode:",
         ["Document Summarizer", "Advanced Analyzer"],
         horizontal=True
     )
 
-    # Shared System Info
     with st.expander("System Info"):
         torch = get_torch()
         st.info(f"PyTorch: {torch.__version__}")
@@ -770,26 +741,62 @@ def main():
 
                     st.subheader("Basic Analysis Summary")
                     st.markdown(f"""
-                    - **Rows**: {analysis['row_count']}
-                    - **Columns**: {analysis['column_count']}
-                    - **Column Names**: {', '.join(analysis['columns'])}
-                    - **Missing Values**: {analysis['missing_values']}
+                    - Rows: {analysis['row_count']}
+                    - Columns: {analysis['column_count']}
+                    - Column Names: {', '.join(analysis['columns'])}
+                    - Missing Values: {analysis['missing_values']}
                     """)
                     if analysis['summary_stats']:
-                        st.markdown("**Summary Statistics**:")
+                        st.markdown("Summary Statistics:")
                         st.dataframe(pd.DataFrame(analysis['summary_stats']))
 
-                    # Add AI Analysis Option
                     if st.button("Generate AI Insights", type="primary"):
                         with st.spinner("Generating AI insights..."):
                             ai_insights = analyze_spreadsheet_with_openai(df)
                         st.subheader("AI-Generated Insights")
                         st.markdown(ai_insights)
 
-                    # Export options
+                        base_filename = uploaded_file.name.split('.')[0]
+                        filename = f"insights_{base_filename}"
+                        download_content = f"Document: {uploaded_file.name}\nAI INSIGHTS:\n{ai_insights}"
+
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.download_button(
+                                label="Download as Text",
+                                data=clean_content(download_content),
+                                file_name=f"{filename}.txt",
+                                mime="text/plain",
+                                use_container_width=True
+                            )
+                        with col2:
+                            st.download_button(
+                                label="Download as Word",
+                                data=export_to_word(download_content, filename),
+                                file_name=f"{filename}.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                use_container_width=True
+                            )
+                        with col3:
+                            st.download_button(
+                                label="Download as PDF",
+                                data=export_to_pdf(download_content, filename),
+                                file_name=f"{filename}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                        with col4:
+                            st.download_button(
+                                label="Download as JSON",
+                                data=export_to_json(download_content, filename),
+                                file_name=f"{filename}.json",
+                                mime="application/json",
+                                use_container_width=True
+                            )
+
                     base_filename = uploaded_file.name.split('.')[0]
                     filename = f"analysis_{base_filename}"
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
                         st.download_button(
                             label="Download as Excel",
@@ -815,11 +822,10 @@ def main():
                             use_container_width=True
                         )
                 else:
-                    st.error(analysis)  # Error message from process_spreadsheet
+                    st.error(analysis)
             else:
                 with st.spinner("Analyzing document..."):
-                    extracted_text, extraction_log, extraction_method = summarize_extract_text_smart(uploaded_file,
-                                                                                                     file_extension)
+                    extracted_text, extraction_log, extraction_method = summarize_extract_text_smart(uploaded_file, file_extension)
 
                 with st.expander("Extraction Process Log", expanded=False):
                     for log_entry in extraction_log:
@@ -831,7 +837,7 @@ def main():
                         "index_pages": "Table of Contents/Index",
                         "first_page_fallback": "First Page (Limited Content)"
                     }
-                    st.info(f"**Content Source:** {method_info.get(extraction_method, 'Unknown')}")
+                    st.info(f"Content Source: {method_info.get(extraction_method, 'Unknown')}")
 
                     st.subheader("Extracted Text")
                     word_count = len(re.findall(r'\b\w+\b', extracted_text))
@@ -864,13 +870,13 @@ def main():
                                 method_suffix = "_index" if extraction_method == "index_pages" else "_firstpage"
                                 base_filename = uploaded_file.name.split('.')[0]
                                 filename = f"summary_{base_filename}{method_suffix}"
-                                download_content = f"Document: {uploaded_file.name}\nContent Source: {method_info.get(extraction_method, 'Unknown')}\nSUMMARY:\n" + summary
+                                download_content = f"Document: {uploaded_file.name}\nContent Source: {method_info.get(extraction_method, 'Unknown')}\nSUMMARY:\n{summary}"
 
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
                                     st.download_button(
                                         label="Download as Text",
-                                        data=download_content,
+                                        data=clean_content(download_content),
                                         file_name=f"{filename}.txt",
                                         mime="text/plain",
                                         use_container_width=True
@@ -906,7 +912,6 @@ def main():
         st.header("Advanced Analyzer (OCR Based)")
         st.markdown("Upload document or image and ask questions about content, tables, and data")
 
-        # Initialize session state for analyzer
         if 'analyzer_vector_store' not in st.session_state:
             st.session_state.analyzer_vector_store = None
         if 'analyzer_qa_chain' not in st.session_state:
@@ -933,9 +938,7 @@ def main():
                 st.session_state.analyzer_qa_chain = None
                 st.session_state.analyzer_processed_file = uploaded_file.name
 
-                # Determine and store document type
-                st.session_state.analyzer_document_type = analyzer_determine_document_type(uploaded_file,
-                                                                                           file_extension, use_ocr)
+                st.session_state.analyzer_document_type = analyzer_determine_document_type(uploaded_file, file_extension, use_ocr)
 
                 with st.spinner("Extracting text..."):
                     if file_extension == 'pdf':
@@ -945,11 +948,10 @@ def main():
                             with st.spinner("Running OCR..."):
                                 ocr_text = analyzer_extract_images_and_ocr(uploaded_file)
                         elif use_ocr and not tesseract_available:
-                            st.warning(
-                                "OCR is not available due to missing Tesseract dependencies. Continuing with text extraction only.")
+                            st.warning("OCR is not available due to missing Tesseract dependencies. Continuing with text extraction only.")
                     elif file_extension == 'docx':
                         text = analyzer_extract_text_from_docx(uploaded_file)
-                        ocr_text = ""  # OCR not applicable for Word documents
+                        ocr_text = ""
                         if use_ocr:
                             st.warning("OCR is only supported for PDF and image files. Skipping OCR for Word document.")
                     elif file_extension in ['jpg', 'png', 'tiff']:
@@ -987,10 +989,9 @@ def main():
                             st.session_state.analyzer_vector_store, api_key
                         )
 
-            # Display document type persistently
             if st.session_state.analyzer_document_type:
                 st.markdown("### Document Type:")
-                st.markdown(f"**{st.session_state.analyzer_document_type}**")
+                st.markdown(f"{st.session_state.analyzer_document_type}")
 
             if st.session_state.analyzer_vector_store and st.session_state.analyzer_qa_chain:
                 st.markdown("---")
@@ -1024,19 +1025,18 @@ def main():
                             if response.get("source_documents"):
                                 with st.expander("Sources"):
                                     for i, doc in enumerate(response["source_documents"][:3]):
-                                        st.markdown(f"**Source {i + 1}:**")
+                                        st.markdown(f"Source {i + 1}:")
                                         content = doc.page_content
                                         st.text(content[:500] + "..." if len(content) > 500 else content)
                                         st.markdown("---")
 
-                                # Export options for answers
                                 base_filename = uploaded_file.name.split('.')[0]
                                 filename = f"answer_{base_filename}"
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
                                     st.download_button(
                                         label="Download as Text",
-                                        data=answer,
+                                        data=clean_content(answer),
                                         file_name=f"{filename}.txt",
                                         mime="text/plain",
                                         use_container_width=True
@@ -1067,20 +1067,18 @@ def main():
                                     )
                         except Exception as e:
                             st.error(f"Error: {str(e)}")
-
         else:
             st.info("Upload a PDF, Word, or image document to start")
             st.markdown("### Features:")
             st.markdown("""
-            - **Text Extraction** - PyPDF2 for PDFs, python-docx for Word documents
-            - **Image Support** - OCR for JPG, PNG, TIFF files
-            - **OCR Support** - Tesseract for images, tables, and handwritten text (PDF and images)
-            - **Smart Q&A** - OpenAI GPT-4o-mini with document analysis
-            - **Data Analysis** - Handles reports, research papers, and images
-            - **Export Options** - Word, PDF, JSON formats
-            - **Fast Processing** - Optimized for performance
+            - Text Extraction - PyPDF2 for PDFs, python-docx for Word documents
+            - Image Support - OCR for JPG, PNG, TIFF files
+            - OCR Support - Tesseract for images, tables, and handwritten text (PDF and images)
+            - Smart Q&A - OpenAI GPT-4o-mini with document analysis
+            - Data Analysis - Handles reports, research papers, and images
+            - Export Options - Word, PDF, JSON formats
+            - Fast Processing - Optimized for performance
             """)
-
 
 if __name__ == "__main__":
     main()
