@@ -95,6 +95,178 @@ def extract_text_with_ocr(image):
         st.error(f"OCR Error: {str(e)}")
         return ""
 
+# === OUTPUT FORMATTING FUNCTIONS (ADDED) ===
+def format_financial_data(text):
+    """Extract and format financial data into structured format"""
+    # Patterns for financial data
+    currency_pattern = r'[\$€£¥₹]\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*(?:USD|EUR|GBP|INR|dollars?|euros?|pounds?|rupees?)'
+    percentage_pattern = r'\d+\.?\d*\s*%'
+    financial_keywords = ['revenue', 'profit', 'loss', 'income', 'expense', 'cost', 'budget', 'investment', 'roi', 'margin', 'ebitda', 'cash flow']
+    
+    # Check if text contains financial content
+    has_financial_data = any(keyword in text.lower() for keyword in financial_keywords) or \
+                        re.search(currency_pattern, text, re.IGNORECASE) or \
+                        re.search(percentage_pattern, text)
+    
+    if not has_financial_data:
+        return None, False
+    
+    # Extract financial data
+    financial_items = []
+    lines = text.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Look for currency amounts
+        currency_matches = re.findall(currency_pattern, line, re.IGNORECASE)
+        percentage_matches = re.findall(percentage_pattern, line)
+        
+        if currency_matches or percentage_matches or any(keyword in line.lower() for keyword in financial_keywords):
+            # Clean and format the line
+            clean_line = re.sub(r'[•\-\*]\s*', '', line).strip()
+            if clean_line and len(clean_line) > 5:  # Avoid very short lines
+                financial_items.append(clean_line)
+    
+    if financial_items:
+        # Create a structured table
+        df_data = []
+        for item in financial_items[:10]:  # Limit to 10 items
+            # Try to extract key-value pairs
+            if ':' in item:
+                parts = item.split(':', 1)
+                metric = parts[0].strip()
+                value = parts[1].strip()
+            elif any(keyword in item.lower() for keyword in financial_keywords):
+                # Find the keyword and treat rest as value
+                words = item.split()
+                for i, word in enumerate(words):
+                    if word.lower() in financial_keywords:
+                        metric = ' '.join(words[:i+1])
+                        value = ' '.join(words[i+1:]) if i+1 < len(words) else 'N/A'
+                        break
+                else:
+                    metric = item[:50] + '...' if len(item) > 50 else item
+                    value = 'See details'
+            else:
+                metric = item[:50] + '...' if len(item) > 50 else item
+                value = 'See details'
+            
+            df_data.append({'Metric': metric, 'Value': value})
+        
+        if df_data:
+            df = pd.DataFrame(df_data)
+            return df, True
+    
+    return None, has_financial_data
+
+def format_bullet_points(text):
+    """Convert text to well-formatted bullet points"""
+    if not text:
+        return text
+    
+    # Split into lines and process
+    lines = text.split('\n')
+    formatted_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Check if line starts with bullet markers
+        if re.match(r'^[\-\*\•]\s*', line):
+            # Already has bullet marker, just clean it up
+            clean_line = re.sub(r'^[\-\*\•]\s*', '• ', line)
+            formatted_lines.append(clean_line)
+        elif re.match(r'^\d+[\.\)]\s*', line):
+            # Numbered list, convert to bullet
+            clean_line = re.sub(r'^\d+[\.\)]\s*', '• ', line)
+            formatted_lines.append(clean_line)
+        elif len(line) > 20 and not line.endswith('.'):
+            # Likely a bullet point without marker
+            formatted_lines.append('• ' + line)
+        else:
+            # Regular text line
+            formatted_lines.append(line)
+    
+    return '\n'.join(formatted_lines)
+
+def display_formatted_response(response_text, title="Analysis Results"):
+    """Display response with proper formatting"""
+    st.markdown(f"### {title}")
+    
+    # Try to format as financial data first
+    financial_df, is_financial = format_financial_data(response_text)
+    
+    if financial_df is not None:
+        st.markdown("**Financial Data Summary:**")
+        st.dataframe(financial_df, use_container_width=True)
+        
+        # Show remaining non-financial content if any
+        non_financial_lines = []
+        lines = response_text.split('\n')
+        financial_keywords = ['revenue', 'profit', 'loss', 'income', 'expense', 'cost', 'budget', 'investment', 'roi', 'margin', 'ebitda', 'cash flow']
+        
+        for line in lines:
+            if line.strip() and not any(keyword in line.lower() for keyword in financial_keywords):
+                currency_pattern = r'[\$€£¥₹]\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*(?:USD|EUR|GBP|INR|dollars?|euros?|pounds?|rupees?)'
+                percentage_pattern = r'\d+\.?\d*\s*%'
+                if not (re.search(currency_pattern, line, re.IGNORECASE) or re.search(percentage_pattern, line)):
+                    non_financial_lines.append(line.strip())
+        
+        if non_financial_lines:
+            st.markdown("**Additional Information:**")
+            additional_text = '\n'.join(non_financial_lines)
+            formatted_text = format_bullet_points(additional_text)
+            st.markdown(formatted_text)
+    
+    elif is_financial:
+        # Has financial content but couldn't create table
+        st.markdown("**Financial Analysis:**")
+        formatted_text = format_bullet_points(response_text)
+        st.markdown(formatted_text)
+    else:
+        # Regular content formatting
+        # Check if it looks like bullet points
+        if '•' in response_text or re.search(r'^[\-\*]\s', response_text, re.MULTILINE) or re.search(r'^\d+[\.\)]\s', response_text, re.MULTILINE):
+            formatted_text = format_bullet_points(response_text)
+            st.markdown(formatted_text)
+        else:
+            # Regular paragraph text
+            paragraphs = response_text.split('\n\n')
+            for para in paragraphs:
+                if para.strip():
+                    st.markdown(para.strip())
+
+def create_enhanced_summary_prompt(text, extraction_method):
+    """Create enhanced prompts for better structured output"""
+    if extraction_method == "index_pages":
+        return """You are a document analyst. Based on the table of contents provided, create a comprehensive summary.
+
+Format your response as follows:
+1. Start with a brief overview paragraph
+2. List main sections/topics as bullet points using • 
+3. If any financial data is mentioned, clearly highlight it
+4. End with the document's apparent purpose/audience
+
+Be specific and professional. Each bullet point should be substantial (15-25 words).
+
+Table of Contents/Index:"""
+    else:
+        return """You are a document analyst. Create a clear, well-structured summary of the following content.
+
+Format guidelines:
+- If the content contains financial data (numbers, percentages, monetary values), present key financial metrics clearly
+- Use bullet points (•) for main findings
+- Keep each point concise but informative (15-25 words)
+- Group related information logically
+- Highlight any key statistics or important figures
+
+Content to analyze:"""
+
 # --- Excel/CSV Processing ---
 def process_spreadsheet(file, file_type):
     try:
@@ -349,26 +521,15 @@ def summarize_extract_text_smart(file, file_type):
 
 def summarize_text_with_openai(text, extraction_method):
     try:
-        if extraction_method == "index_pages":
-            system_prompt = """You are a helpful assistant that creates clear, concise summaries. 
-            The text provided appears to be from a table of contents or index section. 
-            Create a summary that captures the main topics and structure of the document based on this index information.
-            Always format your response with each bullet point on a separate line using the format: - Bullet point text."""
-            user_prompt = f"""Please analyze this table of contents/index and create a 4-6 bullet point summary:
-            {text}"""
-        else:
-            system_prompt = """You are a helpful assistant that creates clear, concise summaries. 
-            Always format your response with each bullet point on a separate line using the format: - Bullet point text."""
-            user_prompt = f"""Please summarize the following text in 3-5 bullet points:
-            {text}"""
-
+        enhanced_prompt = create_enhanced_summary_prompt(text, extraction_method)
+        
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "system", "content": enhanced_prompt},
+                {"role": "user", "content": text}
             ],
-            max_tokens=500,
+            max_tokens=600,
             temperature=0.3
         )
         return response.choices[0].message.content.strip()
@@ -380,8 +541,18 @@ def analyze_spreadsheet_with_openai(df):
     try:
         # Convert DF to string for prompt
         df_str = df.to_csv(index=False)
-        system_prompt = """You are a data analyst. Provide insights, key trends, and summaries from the spreadsheet data."""
-        user_prompt = f"""Analyze this spreadsheet data and provide 3-5 key insights:
+        system_prompt = """You are a financial and data analyst. Analyze the spreadsheet data and provide structured insights.
+
+Format your response as follows:
+1. If financial data is present, highlight key financial metrics first
+2. Use bullet points (•) for main findings
+3. Include specific numbers and percentages where relevant
+4. Group related insights together
+5. End with actionable recommendations if applicable
+
+Be specific and use actual data from the spreadsheet."""
+        
+        user_prompt = f"""Analyze this spreadsheet data and provide 4-6 key insights with specific numbers:
         {df_str}"""
 
         response = client.chat.completions.create(
@@ -390,7 +561,7 @@ def analyze_spreadsheet_with_openai(df):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=500,
+            max_tokens=600,
             temperature=0.3
         )
         return response.choices[0].message.content.strip()
@@ -655,17 +826,19 @@ def analyzer_create_qa_chain(vector_store, api_key):
         )
 
         prompt_template = """
-You are a document analyst. Answer based on the provided context.
+You are a document analyst. Answer based on the provided context with proper formatting.
 
 Context: {context}
 
 Question: {question}
 
 Instructions:
-- Provide detailed answers when context supports it
-- For numerical data, present it clearly
-- If information is incomplete, say what you found
+- If the answer contains financial data (numbers, percentages, monetary values), structure it clearly
+- Use bullet points (•) for listing multiple items or findings
+- Include specific numbers and data points when available
+- If information is incomplete, state what you found and what's missing
 - If no relevant info exists, state "Information not found in document"
+- Keep responses well-organized and professional
 
 Answer:
 """
@@ -744,8 +917,7 @@ def main():
                     if st.button("Generate AI Insights", type="primary"):
                         with st.spinner("Generating AI insights..."):
                             ai_insights = analyze_spreadsheet_with_openai(df)
-                        st.subheader("AI-Generated Insights")
-                        st.markdown(ai_insights)
+                        display_formatted_response(ai_insights, "AI-Generated Insights")
 
                     # Export options
                     base_filename = uploaded_file.name.split('.')[0]
@@ -807,15 +979,8 @@ def main():
                             with st.spinner("Generating AI summary..."):
                                 summary = summarize_text_with_openai(extracted_text, extraction_method)
 
-                            st.subheader("AI-Generated Summary")
                             if summary and not summary.startswith("API Error"):
-                                bullet_markers = ['•', '-', '*']
-                                formatted_summary = summary
-                                for marker in bullet_markers:
-                                    formatted_summary = formatted_summary.replace(f'{marker} ', f'\n{marker} ')
-                                lines = [line.strip() for line in formatted_summary.split('\n') if line.strip()]
-                                formatted_summary = '\n'.join([f"{line}" for line in lines if line.startswith(tuple(bullet_markers))])
-                                st.markdown(formatted_summary)
+                                display_formatted_response(summary, "AI-Generated Summary")
                             else:
                                 st.error(summary)
 
@@ -975,8 +1140,7 @@ def main():
                         try:
                             response = st.session_state.analyzer_qa_chain.invoke({"query": question})
                             answer = response["result"]
-                            st.markdown("Answer:")
-                            st.write(answer)
+                            display_formatted_response(answer, "Analysis Results")
                             
                             if response.get("source_documents"):
                                 with st.expander("Sources"):
