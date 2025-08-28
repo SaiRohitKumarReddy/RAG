@@ -95,7 +95,7 @@ def extract_text_with_ocr(image):
 
 # --- Clean Content for Export ---
 def clean_content(content):
-    """Remove markdown symbols (e.g., **, *, •, #) for clean export."""
+    """Remove markdown symbols, OCR artifacts (e.g., 'I' before numbers), and black square boxes for clean export."""
     # Remove bold/italic markdown (**text** or *text*)
     content = re.sub(r'\*\*(.*?)\*\*', r'\1', content)
     content = re.sub(r'\*(.*?)\*', r'\1', content)
