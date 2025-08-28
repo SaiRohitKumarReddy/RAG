@@ -1,4 +1,3 @@
-
 import os
 import sys
 
@@ -138,9 +137,7 @@ def process_spreadsheet(file, file_type):
 def export_to_word(content, filename):
     doc = docx.Document()
     doc.add_heading(filename, 0)
-    for line in content.split('\n'):
-        if line.strip():
-            doc.add_paragraph(line)
+    doc.add_paragraph(content)
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
@@ -168,26 +165,16 @@ def export_to_pdf(content, filename):
     # Split content into lines and wrap long ones
     lines = content.split('\n')
     for line in lines:
-        x_offset = 0
-        stripped_line = line.lstrip()
-        if stripped_line.startswith(('-', '•', '*')):
-            x_offset = 0.25 * inch  # Indent for bullets
-            wrapped_line = stripped_line
-        else:
-            wrapped_line = line
-
         # Wrap long lines
-        while len(wrapped_line) > 0:
-            # Find max characters that fit in width (approximate)
-            temp_line = wrapped_line
-            while c.stringWidth(temp_line, "Helvetica", font_size) > max_line_width - x_offset and len(temp_line) > 1:
-                temp_line = temp_line[:-1]
-            if temp_line:
-                # Set indent for this line
-                textobject.setTextOrigin(left_margin + x_offset, y)
-                textobject.textLine(temp_line)
+        while len(line) > 0:
+            # Find max characters that fit in width (approximate, or use exact width)
+            wrapped_line = line
+            while c.stringWidth(wrapped_line, "Helvetica", font_size) > max_line_width and len(wrapped_line) > 1:
+                wrapped_line = wrapped_line[:-1]
+            if wrapped_line:
+                textobject.textLine(wrapped_line)
                 y -= leading
-            wrapped_line = wrapped_line[len(temp_line):].lstrip()  # Remaining part
+            line = line[len(wrapped_line):].lstrip()  # Remaining part
 
             if y <= bottom_margin:
                 # Draw current text and start new page
@@ -416,9 +403,8 @@ def analyze_spreadsheet_with_openai(df):
     try:
         # Convert DF to string for prompt
         df_str = df.to_csv(index=False)
-        system_prompt = """You are a data analyst. Provide insights, key trends, and summaries from the spreadsheet data.
-        Format your response with clear bullet points, and use tables or formatted text for any numerical data."""
-        user_prompt = f"""Analyze this spreadsheet data and provide 3-5 key insights, including any financial data highlights:
+        system_prompt = """You are a data analyst. Provide insights, key trends, and summaries from the spreadsheet data."""
+        user_prompt = f"""Analyze this spreadsheet data and provide 3-5 key insights:
         {df_str}"""
 
         response = client.chat.completions.create(
@@ -800,49 +786,10 @@ def main():
                         st.subheader("AI-Generated Insights")
                         st.markdown(ai_insights)
 
-                        # Export options for AI insights
-                        base_filename = uploaded_file.name.split('.')[0]
-                        filename = f"insights_{base_filename}"
-                        download_content = f"Document: {uploaded_file.name}\nAI INSIGHTS:\n" + ai_insights
-
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.download_button(
-                                label="Download as Text",
-                                data=download_content,
-                                file_name=f"{filename}.txt",
-                                mime="text/plain",
-                                use_container_width=True
-                            )
-                        with col2:
-                            st.download_button(
-                                label="Download as Word",
-                                data=export_to_word(download_content, filename),
-                                file_name=f"{filename}.docx",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                use_container_width=True
-                            )
-                        with col3:
-                            st.download_button(
-                                label="Download as PDF",
-                                data=export_to_pdf(download_content, filename),
-                                file_name=f"{filename}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True
-                            )
-                        with col4:
-                            st.download_button(
-                                label="Download as JSON",
-                                data=export_to_json(download_content, filename),
-                                file_name=f"{filename}.json",
-                                mime="application/json",
-                                use_container_width=True
-                            )
-
-                    # Export options for spreadsheet and analysis
+                    # Export options
                     base_filename = uploaded_file.name.split('.')[0]
                     filename = f"analysis_{base_filename}"
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.download_button(
                             label="Download as Excel",
