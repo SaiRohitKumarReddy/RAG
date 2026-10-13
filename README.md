@@ -27,8 +27,6 @@ The application provides two workflows:
 10. [Known limitations](#known-limitations)
 11. [Security and privacy](#security-and-privacy)
 12. [Troubleshooting](#troubleshooting)
-13. [Future enhancements](#future-enhancements)
-14. [License](#license)
 
 ## Features
 
