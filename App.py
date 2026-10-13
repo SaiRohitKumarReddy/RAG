@@ -18,7 +18,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
 import streamlit as st
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 try:
     from langchain_community.vectorstores import FAISS
@@ -27,8 +27,8 @@ try:
 except ImportError:
     FAISS_AVAILABLE = False
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain_classic.chains import RetrievalQA
+from langchain_core.prompts import PromptTemplate
 
 # Streamlit configuration
 os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
@@ -428,7 +428,7 @@ def analyzer_get_docx_reader():
 
 @st.cache_resource
 def analyzer_get_text_splitter():
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
     return RecursiveCharacterTextSplitter
 
 @st.cache_resource
@@ -439,8 +439,8 @@ def analyzer_get_embeddings():
 @st.cache_resource
 def analyzer_get_openai():
     from langchain_openai import ChatOpenAI
-    from langchain.chains import RetrievalQA
-    from langchain.prompts import PromptTemplate
+    from langchain_classic.chains import RetrievalQA
+    from langchain_core.prompts import PromptTemplate
     return ChatOpenAI, RetrievalQA, PromptTemplate
 
 @st.cache_resource

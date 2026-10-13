@@ -1,8 +1,10 @@
 streamlit
 PyPDF2
-langchain
-langchain_community
-langchain-openai
+langchain-classic>=1.0,<2.0
+langchain-core>=1.0,<2.0
+langchain-text-splitters>=1.0,<2.0
+langchain-community>=0.4,<1.0
+langchain-openai>=1.0,<2.0
 faiss-cpu
 torch
 pymupdf
