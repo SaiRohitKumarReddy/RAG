@@ -390,24 +390,3 @@ The included auto-launch command disables Streamlit CORS and XSRF protections. T
 | New upload seems to use old answers | If the new upload has the same filename, start a new session or rename it before uploading. |
 | Public deployment fails | Check logs, Secrets configuration, Tesseract installation, and Python/LangChain dependency compatibility. |
 
-## Future enhancements
-
-The following are **potential improvements**, not implemented features:
-
-- Full-document or chapter-wise summarization with user-selectable page ranges.
-- Persistent vector database and document library.
-- Page-level metadata and verifiable source citations.
-- Better table extraction for financial reports and complex documents.
-- File hashing for more reliable upload-change detection.
-- Configurable chunk sizes, retrieval depth, and model settings.
-- Multilingual OCR and stronger scanned-document preprocessing.
-- Authentication, rate limiting, and usage/cost controls.
-- Pinned dependencies, automated tests, and production deployment checks.
-
-## License
-
-**No license file was included in the uploaded repository.** If you intend to make this project reusable by others, add a suitable `LICENSE` file and review the licensing requirements of its dependencies.
-
----
-
-**Document Analyzer Suite** — Extract information, analyze documents, and ask better questions with OCR, OpenAI, LangChain, and FAISS.
